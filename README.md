@@ -2,6 +2,18 @@
 
 A low-overhead, mobile-first wallboard for Silo CPU, memory, network bandwidth, disk usage, playback-node health, and active playback sessions. A small Go server keeps the Silo API key out of the browser and retains five minutes of CPU, memory, download, and upload samples in memory so charts survive page reloads.
 
+## Screenshots
+
+Mobile views of a live Silo server.
+
+| System | Playing |
+| --- | --- |
+| <img src="docs/images/system.png" alt="System view with CPU, bandwidth, memory, disk usage, and top processes" width="280"> | <img src="docs/images/playing.png" alt="Playing view with active sessions and playback progress" width="280"> |
+
+| Nodes | Settings |
+| --- | --- |
+| <img src="docs/images/nodes.png" alt="Nodes view with health, routed streams, jobs, and resource usage" width="280"> | <img src="docs/images/settings.png" alt="System settings with item ordering, graph height, and visibility controls" width="280"> |
+
 ## Run with Docker Compose
 
 1. Copy `.env.example` to `.env`.
