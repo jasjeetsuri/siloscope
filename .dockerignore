@@ -1,0 +1,4 @@
+.git
+.env
+silo-monitor
+*_test.go

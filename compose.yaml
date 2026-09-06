@@ -1,0 +1,23 @@
+services:
+  silo-monitor:
+    image: ghcr.io/jasjeetsuri/silo-monitor:latest
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      SILO_URL: ${SILO_URL:?Set SILO_URL in .env}
+      SILO_API_KEY: ${SILO_API_KEY:?Set SILO_API_KEY in .env}
+      LISTEN_ADDR: :8080
+      GOMAXPROCS: "1"
+      GOMEMLIMIT: 32MiB
+    ports:
+      - "${MONITOR_BIND:-127.0.0.1}:${MONITOR_PORT:-8091}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:size=1m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    mem_limit: 48m
+    cpus: 0.10

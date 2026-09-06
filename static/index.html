@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#171113">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Silo Monitor">
+    <title>Silo Monitor</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div class="topbar view-banner" aria-hidden="true"></div>
+
+    <main class="page-shell">
+      <section class="resource-section" data-view="system" aria-labelledby="resources-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">API host</p>
+            <h2 id="resources-heading">Resource pulse</h2>
+          </div>
+          <span id="connection-status" class="live-indicator status-offline" role="status" aria-label="Disconnected"></span>
+        </div>
+
+        <article class="disk-panel" aria-labelledby="disk-heading">
+          <div class="disk-heading">
+            <div>
+              <p class="eyebrow">Storage</p>
+              <h3 id="disk-heading">Disk usage</h3>
+            </div>
+          </div>
+          <div id="disk-list" class="disk-list">
+            <p class="disk-empty">Awaiting sample</p>
+          </div>
+        </article>
+
+        <div class="metric-grid">
+          <article class="metric-panel cpu-panel">
+            <div class="metric-header">
+              <div>
+                <span class="metric-name">CPU</span>
+                <strong id="cpu-value">--%</strong>
+              </div>
+              <span id="cpu-detail" class="metric-detail">Awaiting sample</span>
+            </div>
+            <div class="chart-wrap">
+              <svg id="cpu-chart" class="chart" viewBox="0 0 600 170" preserveAspectRatio="none" role="img" aria-label="CPU usage over the last five minutes"></svg>
+              <div class="chart-scale" aria-hidden="true"><span>100</span><span>50</span><span>0</span></div>
+            </div>
+            <div class="chart-footer"><span id="cpu-range-start">Starting now</span><span>Now</span></div>
+          </article>
+
+          <article class="metric-panel network-panel">
+            <div class="metric-header network-header">
+              <div class="network-values">
+                <span class="network-value network-download">
+                  <span class="network-direction">Download</span>
+                  <strong id="download-value">--</strong>
+                </span>
+                <span class="network-value network-upload">
+                  <span class="network-direction">Upload</span>
+                  <strong id="upload-value">--</strong>
+                </span>
+              </div>
+              <span id="network-detail" class="metric-detail">System bandwidth</span>
+            </div>
+            <div class="chart-wrap">
+              <svg id="network-chart" class="chart" viewBox="0 0 600 170" preserveAspectRatio="none" role="img" aria-label="System download and upload bandwidth over the last five minutes"></svg>
+              <div class="chart-scale" aria-hidden="true">
+                <span id="network-scale-max">--</span><span id="network-scale-mid">--</span><span>0</span>
+              </div>
+            </div>
+            <div class="chart-footer"><span id="network-range-start">Starting now</span><span>Now</span></div>
+          </article>
+
+          <article class="metric-panel ram-panel">
+            <div class="metric-header">
+              <div>
+                <span class="metric-name">Memory</span>
+                <strong id="ram-value">--%</strong>
+              </div>
+              <span id="ram-detail" class="metric-detail">Awaiting sample</span>
+            </div>
+            <div class="chart-wrap">
+              <svg id="ram-chart" class="chart" viewBox="0 0 600 170" preserveAspectRatio="none" role="img" aria-label="Memory usage over the last five minutes"></svg>
+              <div class="chart-scale" aria-hidden="true"><span>100</span><span>50</span><span>0</span></div>
+            </div>
+            <div class="chart-footer"><span id="ram-range-start">Starting now</span><span>Now</span></div>
+          </article>
+        </div>
+        <p id="resource-message" class="inline-message" hidden></p>
+      </section>
+
+      <section class="nodes-section" data-view="infrastructure" aria-labelledby="nodes-heading" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Playback infrastructure</p>
+            <h2 id="nodes-heading">Stream nodes</h2>
+          </div>
+          <span id="node-summary" class="count-badge">Checking nodes</span>
+        </div>
+        <div id="nodes" class="node-grid" aria-live="polite">
+          <div class="empty-state">
+            <strong>Loading node status</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="sessions-section" data-view="playing" aria-labelledby="sessions-heading" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Live sessions</p>
+            <h2 id="sessions-heading">Now Playing</h2>
+          </div>
+          <span id="session-count" class="count-badge">0 streams</span>
+        </div>
+        <div id="sessions" class="sessions-grid" aria-live="polite">
+          <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">▶</span>
+            <strong>Checking active streams</strong>
+            <span>Playback sessions will appear here.</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-tabs" aria-label="Monitor views">
+      <div class="tab-list" role="tablist">
+        <button id="system-tab" class="tab-button active" type="button" role="tab" aria-selected="true" data-tab="system">
+          <span class="tab-icon tab-icon-system" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>System</span>
+        </button>
+        <button id="playing-tab" class="tab-button" type="button" role="tab" aria-selected="false" data-tab="playing">
+          <span class="tab-icon-wrap">
+            <span class="tab-icon tab-icon-playing" aria-hidden="true"><i></i></span>
+            <span id="playing-badge" class="tab-badge" aria-label="Active streams" hidden>0</span>
+          </span>
+          <span>Playing</span>
+        </button>
+        <button id="infrastructure-tab" class="tab-button" type="button" role="tab" aria-selected="false" data-tab="infrastructure">
+          <span class="tab-icon-wrap">
+            <span class="tab-icon tab-icon-nodes" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span id="nodes-badge" class="tab-badge" aria-label="Active transcode jobs" hidden>0</span>
+          </span>
+          <span>Nodes</span>
+        </button>
+      </div>
+    </nav>
+  </body>
+</html>

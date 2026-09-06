@@ -1,0 +1,6 @@
+services:
+  silo-monitor:
+    environment:
+      HOST_NETWORK_STATS_DIR: /host/network
+    volumes:
+      - /sys/class/net/${HOST_NETWORK_INTERFACE:-eth0}/statistics:/host/network:ro
