@@ -83,11 +83,12 @@ type hostNetworkSampler struct {
 }
 
 type application struct {
-	config  config
-	client  *http.Client
-	cache   proxyCache
-	history resourceHistory
-	network *hostNetworkSampler
+	config    config
+	client    *http.Client
+	cache     proxyCache
+	history   resourceHistory
+	network   *hostNetworkSampler
+	processes *processSampler
 }
 
 func main() {
@@ -173,7 +174,8 @@ func newApplication(cfg config) *application {
 				ResponseHeaderTimeout: cfg.timeout,
 			},
 		},
-		cache: proxyCache{entries: make(map[string]cacheEntry)},
+		cache:     proxyCache{entries: make(map[string]cacheEntry)},
+		processes: &processSampler{procDir: cfg.hostProcDir},
 	}
 	if cfg.hostNetworkStatsDir != "" || cfg.hostProcDir != "" {
 		app.network = &hostNetworkSampler{procDir: cfg.hostProcDir, statsDir: cfg.hostNetworkStatsDir}
@@ -190,6 +192,7 @@ func (a *application) routes() http.Handler {
 	})
 	mux.HandleFunc("GET /api/resources", a.proxyJSON("resources", "/api/v1/admin/system/resources", resourceCacheTTL))
 	mux.HandleFunc("GET /api/history", a.resourceHistoryJSON)
+	mux.HandleFunc("GET /api/processes", a.processCPUJSON)
 	mux.HandleFunc("GET /api/sessions", a.proxyJSON("sessions", "/api/v1/admin/sessions", a.config.cacheTTL))
 	mux.HandleFunc("GET /api/nodes", a.proxyJSON("nodes", "/api/v1/admin/nodes", a.config.cacheTTL))
 
@@ -217,6 +220,7 @@ func (a *application) sampleResources(ctx context.Context) {
 }
 
 func (a *application) captureResourceSample(ctx context.Context) {
+	a.processes.sample(time.Now())
 	body, _, err := a.fetch(ctx, "resources", "/api/v1/admin/system/resources", resourceCacheTTL)
 	if err != nil {
 		log.Printf("resource history: %v", err)

@@ -12,7 +12,9 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
     <link rel="manifest" href="/site.webmanifest">
     <link rel="stylesheet" href="/styles.css">
+    <script src="/preferences.js" defer></script>
     <script src="/app.js" defer></script>
+    <script src="/settings.js" defer></script>
   </head>
   <body>
     <div class="topbar view-banner" aria-hidden="true"></div>
@@ -53,6 +55,10 @@
               <div class="chart-scale" aria-hidden="true"><span>100</span><span>50</span><span>0</span></div>
             </div>
             <div class="chart-footer"><span id="cpu-range-start">Starting now</span><span>Now</span></div>
+            <div class="cpu-processes">
+              <h3>Top CPU processes</h3>
+              <div id="cpu-process-list">Awaiting sample</div>
+            </div>
           </article>
 
           <article class="metric-panel network-panel">
@@ -121,33 +127,53 @@
         </div>
         <div id="sessions" class="sessions-grid" aria-live="polite">
           <div class="empty-state">
-            <span class="empty-icon" aria-hidden="true">▶</span>
+            <span class="empty-icon" aria-hidden="true"><span class="ui-icon icon-playing"></span></span>
             <strong>Checking active streams</strong>
             <span>Playback sessions will appear here.</span>
           </div>
         </div>
+      </section>
+      <section class="settings-section" data-view="settings" aria-labelledby="settings-heading" hidden>
+        <div class="section-heading">
+          <div><h2 id="settings-heading">Settings</h2></div>
+          <button id="reset-settings" class="settings-command" type="button">Reset all</button>
+        </div>
+        <div id="settings-menu" class="settings-menu" aria-label="Tab settings"></div>
+        <div id="settings-editor" hidden>
+          <div class="settings-editor-heading">
+            <button id="settings-back" class="icon-button" type="button" title="Back to settings" aria-label="Back to settings">&#8592;</button>
+            <h3 id="settings-group-heading" tabindex="-1"></h3>
+            <button id="reset-tab-settings" class="settings-command" type="button">Reset tab</button>
+          </div>
+          <div id="settings-options"></div>
+        </div>
+        <p id="settings-status" class="settings-status" role="status"></p>
       </section>
     </main>
 
     <nav class="bottom-tabs" aria-label="Monitor views">
       <div class="tab-list" role="tablist">
         <button id="system-tab" class="tab-button active" type="button" role="tab" aria-selected="true" data-tab="system">
-          <span class="tab-icon tab-icon-system" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="ui-icon tab-icon icon-system" aria-hidden="true"></span>
           <span>System</span>
         </button>
         <button id="playing-tab" class="tab-button" type="button" role="tab" aria-selected="false" data-tab="playing">
           <span class="tab-icon-wrap">
-            <span class="tab-icon tab-icon-playing" aria-hidden="true"><i></i></span>
+            <span class="ui-icon tab-icon icon-playing" aria-hidden="true"></span>
             <span id="playing-badge" class="tab-badge" aria-label="Active streams" hidden>0</span>
           </span>
           <span>Playing</span>
         </button>
         <button id="infrastructure-tab" class="tab-button" type="button" role="tab" aria-selected="false" data-tab="infrastructure">
           <span class="tab-icon-wrap">
-            <span class="tab-icon tab-icon-nodes" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="ui-icon tab-icon icon-nodes" aria-hidden="true"></span>
             <span id="nodes-badge" class="tab-badge" aria-label="Active transcode jobs" hidden>0</span>
           </span>
           <span>Nodes</span>
+        </button>
+        <button id="settings-tab" class="tab-button" type="button" role="tab" aria-selected="false" data-tab="settings">
+          <span class="ui-icon tab-icon icon-settings" aria-hidden="true"></span>
+          <span>Settings</span>
         </button>
       </div>
     </nav>

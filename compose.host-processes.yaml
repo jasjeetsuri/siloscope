@@ -1,0 +1,6 @@
+services:
+  silo-monitor:
+    environment:
+      HOST_PROC_DIR: /host/proc
+    volumes:
+      - /proc:/host/proc:ro

@@ -26,7 +26,7 @@ const state = {
   nodesOK: null,
   lastSuccessAt: null,
   view: "system",
-  viewScroll: { system: 0, infrastructure: 0, playing: 0 },
+  viewScroll: { system: 0, infrastructure: 0, playing: 0, settings: 0 },
 };
 
 const chartViews = new Map();
@@ -79,7 +79,10 @@ function setView(view) {
     button.classList.toggle("active", selected);
     button.setAttribute("aria-selected", String(selected));
   }
-  window.requestAnimationFrame(() => window.scrollTo(0, state.viewScroll[view]));
+  window.requestAnimationFrame(() => {
+    window.scrollTo(0, state.viewScroll[view]);
+    redrawCharts();
+  });
 }
 
 function nextPaint() {
@@ -617,6 +620,13 @@ function addTag(container, text, className = "") {
   container.append(tag);
 }
 
+function playbackIcon(className) {
+  const wrapper = elementWithClass("span", className);
+  wrapper.setAttribute("aria-hidden", "true");
+  wrapper.append(elementWithClass("span", "ui-icon icon-playing"));
+  return wrapper;
+}
+
 function createSessionCard(session) {
   const card = elementWithClass("article", `session-card${session.is_paused ? " paused" : ""}`);
   const poster = elementWithClass("div", "poster");
@@ -628,11 +638,11 @@ function createSessionCard(session) {
     image.decoding = "async";
     image.addEventListener("error", () => {
       image.remove();
-      poster.prepend(elementWithClass("span", "poster-fallback", "▶"));
+      poster.prepend(playbackIcon("poster-fallback"));
     }, { once: true });
     poster.append(image);
   } else {
-    poster.append(elementWithClass("span", "poster-fallback", "▶"));
+    poster.append(playbackIcon("poster-fallback"));
   }
   if (session.is_paused) {
     poster.append(elementWithClass("span", "pause-overlay", "Ⅱ"));
@@ -647,9 +657,9 @@ function createSessionCard(session) {
   const tags = elementWithClass("div", "session-tags");
   const method = String(session.effective_play_method || session.play_method || "unknown").toLowerCase();
   addTag(tags, humanize(method), method.includes("transcode") || method === "audio" ? "tag-transcode" : "tag-method");
-  addTag(tags, session.client_label || session.client_name);
-  addTag(tags, session.node_display_name || session.reporting_node);
-  addTag(tags, session.profile_name || session.profile_id);
+  addTag(tags, session.client_label || session.client_name, "session-client");
+  addTag(tags, session.node_display_name || session.reporting_node, "session-node");
+  addTag(tags, session.profile_name || session.profile_id, "session-profile");
   copy.append(tags);
 
   const duration = Number(session.file_duration);
@@ -685,7 +695,7 @@ function showSessions(payload) {
   if (sessions.length === 0) {
     const empty = elementWithClass("div", "empty-state");
     empty.append(
-      elementWithClass("span", "empty-icon", "▶"),
+      playbackIcon("empty-icon"),
       elementWithClass("strong", "", "Nothing playing right now"),
       elementWithClass("span", "", "Active sessions will appear automatically."),
     );
@@ -765,7 +775,7 @@ function createNodeCard(node) {
     ["Accelerator", String(node.capabilities?.resolved || "none").toUpperCase()],
   ];
   for (const [label, value] of statValues) {
-    const stat = elementWithClass("div", "node-stat");
+    const stat = elementWithClass("div", `node-stat node-stat-${label.toLowerCase()}`);
     stat.append(elementWithClass("span", "node-stat-label", label), elementWithClass("strong", "", value));
     stats.append(stat);
   }
@@ -850,7 +860,7 @@ async function loadResourceHistory() {
     setLiveNetworkReadout(
       formatBandwidth(latestNetwork.download),
       formatBandwidth(latestNetwork.upload),
-      "System bandwidth · inbound / outbound",
+      "System bandwidth",
     );
   }
   redrawCharts();
@@ -869,14 +879,33 @@ function updateConnection() {
   else setConnection("waiting", "Connecting");
 }
 
+function showProcesses(payload) {
+  const list = document.getElementById("cpu-process-list");
+  list.replaceChildren();
+  const sampledAt = Date.parse(payload?.sampled_at);
+  if (!payload?.available || !Number.isFinite(sampledAt) || Math.abs(Date.now() - sampledAt) > 15_000 || !Array.isArray(payload.processes)) {
+    list.textContent = "Process metrics unavailable";
+    return;
+  }
+  for (const process of payload.processes.slice(0, 3)) {
+    if (!Number.isFinite(process.cpu_pct)) continue;
+    const row = elementWithClass("div", "cpu-process-row");
+    row.append(elementWithClass("span", "", process.name || "Unknown"), elementWithClass("span", "", `${process.cpu_pct.toFixed(1)}%`));
+    list.append(row);
+  }
+  if (!list.childElementCount) list.textContent = "Process metrics unavailable";
+}
+
 async function refreshResources() {
   if (state.resourceInFlight || document.visibilityState !== "visible") return;
   state.resourceInFlight = true;
   try {
-    const [resources, history] = await Promise.allSettled([
+    const [resources, history, processes] = await Promise.allSettled([
       fetchJSON("/api/resources"),
       loadResourceHistory(),
+      fetchJSON("/api/processes"),
     ]);
+    showProcesses(processes.status === "fulfilled" ? processes.value : null);
     if (resources.status === "rejected") throw resources.reason;
     showResourceSample(resources.value);
     if (history.status === "rejected") renderNetworkChart();
@@ -954,6 +983,10 @@ window.addEventListener("pageshow", async () => {
   redrawCharts();
 });
 window.addEventListener("resize", () => window.requestAnimationFrame(redrawCharts));
+window.addEventListener("monitor-settings-change", () => window.requestAnimationFrame(() => {
+  for (const svg of chartViews.keys()) stopScrub(svg);
+  redrawCharts();
+}));
 
 window.addEventListener("online", () => void refreshAll());
 window.addEventListener("offline", () => setConnection("offline", "Offline"));

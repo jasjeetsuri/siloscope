@@ -47,6 +47,20 @@ docker compose -f compose.yaml -f compose.host-network.yaml up -d
 
 You can find the interface with `ip route show default`. The override mounts only that interface's byte counters read-only.
 
+## Display preferences
+
+The bottom-right Settings tab has separate System, Playing, and Nodes menus. Toggle sections and individual details, including the CPU process list, session metadata, node statistics, and tab badges. System also supports item reordering and graph height adjustment. Hidden content continues refreshing.
+
+Preferences are saved in this browser on this device, not on the server. Reset tab restores one view; Reset all restores every display preference. When browser storage is unavailable, changes apply for the current page only.
+
+The optional host process list reports the three highest CPU consumers as a percentage of total host CPU capacity. Enable it with a read-only host `/proc` mount:
+
+```sh
+docker compose -f compose.yaml -f compose.host-network.yaml -f compose.host-processes.yaml up -d
+```
+
+`HOST_PROC_DIR` points to the mounted directory (`/host/proc`). Without this override, process metrics show as unavailable.
+
 ## Build locally
 
 ```sh
