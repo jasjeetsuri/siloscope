@@ -356,6 +356,20 @@ h1 {
   margin-bottom: 32px;
 }
 
+.session-source.source-plex {
+  color: #f3bd4f;
+  border-color: rgb(243 189 79 / 0.35);
+}
+
+.session-source.source-silo {
+  color: var(--primary);
+  border-color: var(--primary-soft);
+}
+
+#session-message {
+  margin-bottom: 16px;
+}
+
 .section-heading {
   justify-content: space-between;
   gap: 16px;

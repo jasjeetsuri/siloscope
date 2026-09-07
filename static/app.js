@@ -23,6 +23,7 @@ const state = {
   sessionInFlight: false,
   resourceOK: null,
   sessionsOK: null,
+  plexOK: null,
   nodesOK: null,
   lastSuccessAt: null,
   view: "system",
@@ -56,6 +57,7 @@ const elements = {
   resourceMessage: document.querySelector("#resource-message"),
   sessions: document.querySelector("#sessions"),
   sessionCount: document.querySelector("#session-count"),
+  sessionMessage: document.querySelector("#session-message"),
   playingBadge: document.querySelector("#playing-badge"),
   nodesBadge: document.querySelector("#nodes-badge"),
   viewSections: document.querySelectorAll("[data-view]"),
@@ -597,6 +599,7 @@ function sessionTitle(session) {
 }
 
 function sessionSubtitle(session) {
+  if (session.subtitle) return session.subtitle;
   if (session.series_name && session.season_number != null && session.episode_number != null) {
     return `S${session.season_number} · E${session.episode_number} — ${session.series_name}`;
   }
@@ -655,6 +658,7 @@ function createSessionCard(session) {
   );
 
   const tags = elementWithClass("div", "session-tags");
+  addTag(tags, session.source === "plex" ? "Plex" : "Silo", `session-source source-${session.source === "plex" ? "plex" : "silo"}`);
   const method = String(session.effective_play_method || session.play_method || "unknown").toLowerCase();
   addTag(tags, humanize(method), method.includes("transcode") || method === "audio" ? "tag-transcode" : "tag-method");
   addTag(tags, session.client_label || session.client_name, "session-client");
@@ -677,7 +681,9 @@ function createSessionCard(session) {
   footer.append(
     elementWithClass("span", "avatar", username.charAt(0).toUpperCase() || "?"),
     elementWithClass("span", "session-user", username),
-    elementWithClass("span", "session-time", `Started ${relativeTime(session.started_at)}`),
+    elementWithClass("span", "session-time", session.source === "plex"
+      ? humanize(session.playback_state || (session.is_paused ? "paused" : "playing"))
+      : `Started ${relativeTime(session.started_at)}`),
   );
   copy.append(footer);
   card.append(poster, copy);
@@ -696,10 +702,11 @@ function showSessions(payload) {
     const empty = elementWithClass("div", "empty-state");
     empty.append(
       playbackIcon("empty-icon"),
-      elementWithClass("strong", "", "Nothing playing right now"),
-      elementWithClass("span", "", "Active sessions will appear automatically."),
+      elementWithClass("strong", "", state.sessionsOK === false || state.plexOK === false ? "Playback status incomplete" : "Nothing playing right now"),
+      elementWithClass("span", "", state.sessionsOK === false || state.plexOK === false ? "Waiting for playback sources to reconnect." : "Active sessions will appear automatically."),
     );
     elements.sessions.append(empty);
+    renderNodes();
     return;
   }
   for (const session of sessions) {
@@ -717,7 +724,7 @@ function formatMbps(kbps) {
 
 function nodeRouteCount(node) {
   const key = node.type === "proxy" ? "routing_egress_node_id" : "routing_execution_node_id";
-  return state.sessions.filter((session) => Number(session[key]) === Number(node.id)).length;
+  return state.sessions.filter((session) => session.source !== "plex" && Number(session[key]) === Number(node.id)).length;
 }
 
 function nodeResourceSummary(node) {
@@ -873,6 +880,7 @@ function noteSuccess() {
 
 function updateConnection() {
   const statuses = [state.resourceOK, state.sessionsOK, state.nodesOK];
+  if (state.plexOK !== null) statuses.push(state.plexOK);
   if (statuses.every((status) => status === true)) setConnection("live", "Live");
   else if (statuses.every((status) => status === false)) setConnection("offline", "Disconnected");
   else if (statuses.some((status) => status === false)) setConnection("degraded", "Partial");
@@ -926,19 +934,35 @@ async function refreshSessions() {
   if (state.sessionInFlight || document.visibilityState !== "visible") return;
   state.sessionInFlight = true;
   try {
-    const [sessions, nodes] = await Promise.allSettled([
-      fetchJSON("/api/sessions"),
+    const [sessions, nodes, plex] = await Promise.allSettled([
+      fetchJSON("/api/sessions").then(payload => {
+        if (!Array.isArray(payload)) throw new Error("Invalid Silo sessions");
+        return payload;
+      }),
       fetchJSON("/api/nodes"),
+      fetchJSON("/api/plex/sessions").then(payload => {
+        if (typeof payload?.enabled !== "boolean" || !Array.isArray(payload.sessions)) throw new Error("Invalid Plex sessions");
+        return payload;
+      }),
     ]);
     state.sessionsOK = sessions.status === "fulfilled";
     state.nodesOK = nodes.status === "fulfilled";
-    if (sessions.status === "fulfilled") showSessions(sessions.value);
+    state.plexOK = plex.status === "fulfilled" ? (plex.value.enabled ? true : null) : false;
+    const messages = [];
+    if (!state.sessionsOK) messages.push("Silo playback is unavailable.");
+    if (state.plexOK === false) messages.push("Plex playback is unavailable. Check the server URL and token.");
+    elements.sessionMessage.textContent = messages.join(" ");
+    elements.sessionMessage.hidden = messages.length === 0;
+    showSessions([
+      ...(state.sessionsOK ? sessions.value.map(session => ({ ...session, source: "silo" })) : []),
+      ...(state.plexOK === true ? plex.value.sessions.map(session => ({ ...session, source: "plex" })) : []),
+    ]);
     if (nodes.status === "fulfilled") showNodes(nodes.value);
     else {
       elements.nodeSummary.textContent = "Unavailable";
       elements.nodes.replaceChildren(elementWithClass("div", "empty-state", "Node status could not be refreshed."));
     }
-    if (state.sessionsOK || state.nodesOK) noteSuccess();
+    if (state.sessionsOK || state.nodesOK || state.plexOK === true) noteSuccess();
   } finally {
     state.sessionInFlight = false;
     updateConnection();

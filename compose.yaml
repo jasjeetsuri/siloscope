@@ -6,6 +6,8 @@ services:
     environment:
       SILO_URL: ${SILO_URL:?Set SILO_URL in .env}
       SILO_API_KEY: ${SILO_API_KEY:?Set SILO_API_KEY in .env}
+      PLEX_URL: ${PLEX_URL:-}
+      PLEX_TOKEN: ${PLEX_TOKEN:-}
       LISTEN_ADDR: :8080
       GOMAXPROCS: "1"
       GOMEMLIMIT: 32MiB

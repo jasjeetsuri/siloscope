@@ -42,6 +42,8 @@ type config struct {
 	cacheTTL            time.Duration
 	hostProcDir         string
 	hostNetworkStatsDir string
+	plexURL             *url.URL
+	plexToken           string
 }
 
 type cacheEntry struct {
@@ -149,6 +151,10 @@ func loadConfig() (config, error) {
 	if address == "" {
 		address = defaultAddress
 	}
+	plexURL, plexToken, err := loadPlexConfig()
+	if err != nil {
+		return config{}, err
+	}
 
 	return config{
 		address:             address,
@@ -158,6 +164,8 @@ func loadConfig() (config, error) {
 		cacheTTL:            defaultCacheTTL,
 		hostProcDir:         strings.TrimSpace(os.Getenv("HOST_PROC_DIR")),
 		hostNetworkStatsDir: strings.TrimSpace(os.Getenv("HOST_NETWORK_STATS_DIR")),
+		plexURL:             plexURL,
+		plexToken:           plexToken,
 	}, nil
 }
 
@@ -194,6 +202,8 @@ func (a *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/history", a.resourceHistoryJSON)
 	mux.HandleFunc("GET /api/processes", a.processCPUJSON)
 	mux.HandleFunc("GET /api/sessions", a.proxyJSON("sessions", "/api/v1/admin/sessions", a.config.cacheTTL))
+	mux.HandleFunc("GET /api/plex/sessions", a.plexSessionsJSON)
+	mux.HandleFunc("GET /api/plex/poster", a.plexPoster)
 	mux.HandleFunc("GET /api/nodes", a.proxyJSON("nodes", "/api/v1/admin/nodes", a.config.cacheTTL))
 
 	content, err := fs.Sub(staticFiles, "static")
