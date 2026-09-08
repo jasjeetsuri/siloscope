@@ -12,6 +12,7 @@ const MAX_POINTS = Math.ceil(HISTORY_WINDOW_MS / RESOURCE_POLL_INTERVAL_MS) + 1;
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const state = {
+  chartMinutes: 5,
   cpu: [],
   memory: [],
   network: [],
@@ -76,6 +77,7 @@ function setView(view) {
   state.viewScroll[state.view] = window.scrollY;
   state.view = view;
   for (const section of elements.viewSections) section.hidden = section.dataset.view !== view;
+  window.dispatchEvent(new Event("monitor-view-change"));
   for (const button of elements.tabButtons) {
     const selected = button.dataset.tab === view;
     button.classList.toggle("active", selected);
@@ -206,11 +208,15 @@ function historyLabel(duration) {
 }
 
 function renderChart(svg, points, color, rangeLabel) {
+  svg.setAttribute("aria-label", `${svg === elements.cpuChart ? "CPU" : "Memory"} usage over the last ${state.chartMinutes} minutes`);
   svg.replaceChildren();
   svg.append(
     svgElement("rect", { x: 0, y: 0, width: 600, height: 17, class: "chart-threshold-danger" }),
     svgElement("rect", { x: 0, y: 17, width: 600, height: 17, class: "chart-threshold-warning" }),
   );
+  if (svg === elements.cpuChart) {
+    svg.append(svgElement("rect", { x: 0, y: 153, width: 600, height: 17, class: "chart-threshold-low" }));
+  }
   for (const value of [0, 25, 50, 75, 100]) {
     const y = 170 - (value / 100) * 170;
     svg.append(svgElement("line", { x1: 0, y1: y, x2: 600, y2: y, class: "chart-grid" }));
@@ -218,7 +224,7 @@ function renderChart(svg, points, color, rangeLabel) {
 
   const now = Date.now();
   const firstSample = points.find((point) => point.t >= now - HISTORY_WINDOW_MS);
-  const collectedDuration = firstSample ? Math.min(HISTORY_WINDOW_MS, Math.max(0, now - firstSample.t)) : 0;
+  const collectedDuration = firstSample ? Math.min(state.chartMinutes * 60_000, Math.max(0, now - firstSample.t)) : 0;
   const displayDuration = Math.max(RESOURCE_POLL_INTERVAL_MS, collectedDuration);
   const start = now - displayDuration;
   const paths = seriesPaths(points, now, start);
@@ -264,6 +270,7 @@ function renderChart(svg, points, color, rangeLabel) {
 
 function renderNetworkChart() {
   const svg = elements.networkChart;
+  svg.setAttribute("aria-label", `System download and upload bandwidth over the last ${state.chartMinutes} minutes`);
   svg.replaceChildren();
   for (const value of [0, 25, 50, 75, 100]) {
     const y = 170 - (value / 100) * 170;
@@ -272,13 +279,13 @@ function renderNetworkChart() {
 
   const now = Date.now();
   const firstSample = state.network.find((point) => point.t >= now - HISTORY_WINDOW_MS);
-  const collectedDuration = firstSample ? Math.min(HISTORY_WINDOW_MS, Math.max(0, now - firstSample.t)) : 0;
+  const collectedDuration = firstSample ? Math.min(state.chartMinutes * 60_000, Math.max(0, now - firstSample.t)) : 0;
   const displayDuration = Math.max(RESOURCE_POLL_INTERVAL_MS, collectedDuration);
   const start = now - displayDuration;
   const visible = state.network.filter((point) => point.t >= start && point.t <= now);
   const maximum = bandwidthCeiling(visible);
 
-  for (const [key, color] of [["download", "#65b9ff"], ["upload", "#f3bd4f"]]) {
+  for (const [key, color] of [["download", "#79b8ed"], ["upload", "#e6bd72"]]) {
     const paths = seriesPaths(state.network, now, start, maximum, key);
     for (const segment of paths) {
       svg.append(svgElement("path", { d: smoothPath(segment), class: "chart-line", stroke: color }));
@@ -340,7 +347,7 @@ function updateScrub(svg, clientX) {
   if (view.kind === "network") {
     svg.querySelectorAll(".chart-crosshair, .chart-scrub-point").forEach((element) => element.remove());
     svg.append(svgElement("line", { x1: x, y1: 0, x2: x, y2: 170, class: "chart-crosshair" }));
-    for (const [key, color] of [["download", "#65b9ff"], ["upload", "#f3bd4f"]]) {
+    for (const [key, color] of [["download", "#79b8ed"], ["upload", "#e6bd72"]]) {
       if (sample[key] === null) continue;
       const y = 170 - (sample[key] / view.maximum) * 170;
       svg.append(svgElement("ellipse", {
@@ -616,6 +623,49 @@ function relativeTime(value) {
   return `${hours}h ago`;
 }
 
+function resolutionLabel(value) {
+  const resolution = String(value || "").trim().toLowerCase();
+  if (!resolution || resolution === "unknown") return "";
+  if (["4k", "uhd", "2160", "2160p"].includes(resolution)) return "4K";
+  const dimensions = resolution.match(/^(\d+)\s*x\s*(\d+)$/);
+  if (dimensions) {
+    const width = Number(dimensions[1]);
+    const height = Number(dimensions[2]);
+    if (width >= 3800 || height >= 2160) return "4K";
+    if (width >= 1900 || height >= 1080) return "1080p";
+    if (width >= 1280 || height >= 720) return "720p";
+    if (height >= 576) return "576p";
+    if (height > 0) return height > 480 || width >= 640 ? "480p" : `${height}p`;
+    return "";
+  }
+  if (/^\d+$/.test(resolution)) return `${resolution}p`;
+  return /^\d+[pi]$/.test(resolution) ? resolution : "";
+}
+
+function audioLabel(codec, profile) {
+  const normalized = String(codec || "").trim().toLowerCase();
+  if (!normalized || ["unknown", "copy", "none"].includes(normalized)) return "";
+  const detail = String(profile || "").trim().toLowerCase();
+  if (["dts", "dca"].includes(normalized)) {
+    if (["ma", "dts-hd ma", "dts-hd master audio"].includes(detail)) return "DTS-HD MA";
+    if (["hra", "dts-hd hra", "dts-hd high resolution audio"].includes(detail)) return "DTS-HD HRA";
+    return "DTS";
+  }
+  return ({ ac3: "DD", eac3: "DD+", "e-ac-3": "DD+", "ac-3": "DD", dtshd: "DTS-HD", dts_hd: "DTS-HD", dts_hd_ma: "DTS-HD MA", truehd: "TrueHD", aac: "AAC", flac: "FLAC", opus: "Opus", mp3: "MP3" })[normalized] || normalized.toUpperCase();
+}
+
+function playbackDetails(session) {
+  const sourceResolution = resolutionLabel(session.source_video_resolution);
+  const targetResolution = resolutionLabel(session.target_resolution);
+  const sourceAudio = audioLabel(session.source_audio_codec, session.source_audio_profile);
+  const targetAudio = audioLabel(session.target_audio_codec);
+  const changed = (source, target) => source && target && source !== target ? `${source} → ${target}` : target || source;
+  const toneMap = session.source !== "plex"
+    ? ({ software: "SW Tone Map", hardware: "HW Tone Map" })[session.tone_map_mode] || ""
+    : "";
+  return { resolution: changed(sourceResolution, targetResolution), audio: changed(sourceAudio, targetAudio), toneMap };
+}
+
 function addTag(container, text, className = "") {
   if (!text) return;
   const tag = elementWithClass("span", `tag ${className}`.trim(), text);
@@ -661,6 +711,10 @@ function createSessionCard(session) {
   addTag(tags, session.source === "plex" ? "Plex" : "Silo", `session-source source-${session.source === "plex" ? "plex" : "silo"}`);
   const method = String(session.effective_play_method || session.play_method || "unknown").toLowerCase();
   addTag(tags, humanize(method), method.includes("transcode") || method === "audio" ? "tag-transcode" : "tag-method");
+  const details = playbackDetails(session);
+  addTag(tags, details.resolution, "session-resolution");
+  addTag(tags, details.toneMap, "session-tonemap");
+  addTag(tags, details.audio, "session-audio");
   addTag(tags, session.client_label || session.client_name, "session-client");
   addTag(tags, session.node_display_name || session.reporting_node, "session-node");
   addTag(tags, session.profile_name || session.profile_id, "session-profile");
@@ -779,8 +833,10 @@ function createNodeCard(node) {
     ["Jobs", maxJobs ? `${jobs}/${maxJobs}` : String(jobs)],
     ["Egress", formatMbps(node.egress_kbps)],
     ["Checked", relativeTime(node.last_health_check)],
-    ["Accelerator", String(node.capabilities?.resolved || "none").toUpperCase()],
   ];
+  if (node.type === "transcode") {
+    statValues.push(["Accelerator", String(node.capabilities?.resolved || "none").toUpperCase()]);
+  }
   for (const [label, value] of statValues) {
     const stat = elementWithClass("div", `node-stat node-stat-${label.toLowerCase()}`);
     stat.append(elementWithClass("span", "node-stat-label", label), elementWithClass("strong", "", value));
@@ -1007,10 +1063,13 @@ window.addEventListener("pageshow", async () => {
   redrawCharts();
 });
 window.addEventListener("resize", () => window.requestAnimationFrame(redrawCharts));
-window.addEventListener("monitor-settings-change", () => window.requestAnimationFrame(() => {
-  for (const svg of chartViews.keys()) stopScrub(svg);
-  redrawCharts();
-}));
+window.addEventListener("monitor-settings-change", event => {
+  if ([2, 3, 4, 5].includes(event.detail?.chartMinutes)) state.chartMinutes = event.detail.chartMinutes;
+  window.requestAnimationFrame(() => {
+    for (const svg of chartViews.keys()) stopScrub(svg);
+    redrawCharts();
+  });
+});
 
 window.addEventListener("online", () => void refreshAll());
 window.addEventListener("offline", () => setConnection("offline", "Offline"));

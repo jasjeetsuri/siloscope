@@ -1,4 +1,4 @@
-# Silo Monitor
+# Siloscope
 
 A low-overhead, mobile-first wallboard for Silo CPU, memory, network bandwidth, disk usage, playback-node health, and active Silo and Plex playback sessions. A small Go server keeps API credentials out of the browser and retains five minutes of CPU, memory, download, and upload samples in memory so charts survive page reloads.
 
@@ -109,32 +109,30 @@ The monitor reads `/status/sessions` every 15 seconds while the page is visible,
 
 The Playing badge counts sessions from both sources. Plex sessions do not affect Silo node routing or job counts. If either playback source fails, the other remains visible with an outage notice; unavailable sessions are removed until the source recovers. Leave both variables blank to disable Plex. Protect the monitor behind your existing authenticated proxy because it exposes playback activity and posters.
 
+## Transcoder settings
+
+Settings > Transcoder edits Silo's server-wide transcoding configuration: transcoding and 4K permissions, hardware acceleration, hardware/software HDR tone mapping, throttling and buffers, and playback execution/egress routing. Chapter settings, GPU device selection, and FFmpeg/transcode directory paths are excluded.
+
+Toggles and dropdowns save automatically on change. Numeric fields save after a short typing pause or when committed, provided the value is valid. Rejected changes restore the previous value; unconfirmed saves require reloading settings before further edits. Display-preference resets never change Silo configuration. Restart notices come from Silo: saving is immediate, but settings marked as requiring a restart do not take effect until Silo is restarted. Saving never automatically restarts it. Missing fields are disabled rather than assigned guessed defaults. The Silo version must support the effective-settings, restart-keys, and batch settings APIs.
+
+This makes the dashboard an administrative interface, not just a read-only wallboard. Anyone with access can change these server settings using its configured admin key. Keep the service bound to localhost or a trusted private network and require administrator authentication at your reverse proxy before exposing it. Same-origin checks prevent cross-site browser writes; they are not a substitute for authentication. Credentials remain on the backend, and only the listed settings can be read or written through this endpoint.
+
+The top of every Settings view shows a banner when Silo reports a pending restart, including changes made outside Siloscope. Status refreshes every 15 seconds while Settings is visible and clears once Silo reports no pending restart. Known warnings remain visible during status outages. Individual controls that require a restart are labelled independently of the pending banner. Siloscope does not restart the server automatically.
+
+The banner's **Restart now** button requests a graceful Silo restart after confirmation. Active playback may be interrupted. The button stays disabled while waiting for a new server start time; failed or unconfirmed requests show status feedback rather than silently retrying. Access to the dashboard therefore also grants the ability to restart Silo through its configured admin credentials.
+
 ## Display preferences
+
+Playback cards include video resolution (4K, 1080p, 720p, or 480p), audio codec labels such as DTS, DTS-HD MA, DD, DD+, and TrueHD, and Silo's confirmed SW/HW tone-mapping mode. Source and output are shown together when they differ. Missing details are omitted; tone mapping is never inferred from hardware video acceleration. Plex audio profiles come from the selected audio stream when available.
 
 The bottom-right Settings tab has separate System, Playing, and Nodes menus. Toggle sections and individual details, including the CPU process list, session metadata, node statistics, and tab badges. System also supports item reordering and graph height adjustment. Hidden content continues refreshing.
 
 Preferences are saved in this browser on this device, not on the server. Reset tab restores one view; Reset all restores every display preference. When browser storage is unavailable, changes apply for the current page only.
+
+In Settings > System, Graph time window selects 2, 3, 4, or 5 minutes for the CPU, memory, and network graphs. The default is 5 minutes. The full five-minute history is retained when selecting a shorter window, and graphs with fewer samples show the available history until the selected duration is filled.
 
 ## Build locally
 
 ```sh
 docker build -t silo-monitor:local .
 ```
-
-## Tests
-
-```sh
-go test -race ./...
-node --check static/app.js
-node --test scripts/preferences.test.cjs
-```
-
-The optional browser regression test uses Playwright with synthetic Silo and Plex responses. Start the monitor locally, then run the following in another terminal. `MONITOR_TEST_URL` defaults to `http://127.0.0.1:18198`; no real server credentials are needed for this test.
-
-```sh
-npm install --prefix /tmp/silo-monitor-browser-tests playwright
-/tmp/silo-monitor-browser-tests/node_modules/.bin/playwright install chromium
-NODE_PATH=/tmp/silo-monitor-browser-tests/node_modules node --test scripts/playback.test.cjs
-```
-
-It checks combined counts, paused playback, posters, source preferences, independent source failures, Silo node isolation, and mobile/desktop layout. Screenshots are written to `/tmp/silo-monitor-plex-{320,390,1280}.png`.

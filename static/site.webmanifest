@@ -1,6 +1,6 @@
 {
-  "name": "Silo Monitor",
-  "short_name": "Silo Monitor",
+  "name": "Siloscope",
+  "short_name": "Siloscope",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

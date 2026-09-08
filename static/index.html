@@ -6,25 +6,28 @@
     <meta name="theme-color" content="#171113">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Silo Monitor">
-    <title>Silo Monitor</title>
+    <meta name="apple-mobile-web-app-title" content="Siloscope">
+    <title>Siloscope</title>
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
     <link rel="manifest" href="/site.webmanifest">
     <link rel="stylesheet" href="/styles.css">
     <script src="/preferences.js" defer></script>
     <script src="/app.js" defer></script>
+    <script src="/transcoder.js" defer></script>
+    <script src="/restart.js" defer></script>
     <script src="/settings.js" defer></script>
   </head>
   <body>
-    <div class="topbar view-banner" aria-hidden="true"></div>
+    <header class="topbar view-banner">
+    </header>
 
     <main class="page-shell">
       <section class="resource-section" data-view="system" aria-labelledby="resources-heading">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">API host</p>
-            <h2 id="resources-heading">Resource pulse</h2>
+            <p class="eyebrow">Silo API Server</p>
+            <h2 id="resources-heading">Server pulse</h2>
           </div>
           <span id="connection-status" class="live-indicator status-offline" role="status" aria-label="Disconnected"></span>
         </div>
@@ -42,10 +45,10 @@
         </article>
 
         <div class="metric-grid">
-          <article class="metric-panel cpu-panel">
+          <article class="metric-panel cpu-panel" aria-labelledby="cpu-heading">
+            <div class="metric-section-heading"><p class="eyebrow">Processor</p><h3 id="cpu-heading">CPU usage</h3></div>
             <div class="metric-header">
               <div>
-                <span class="metric-name">CPU</span>
                 <strong id="cpu-value">--%</strong>
               </div>
               <span id="cpu-detail" class="metric-detail">Awaiting sample</span>
@@ -61,7 +64,8 @@
             </div>
           </article>
 
-          <article class="metric-panel network-panel">
+          <article class="metric-panel network-panel" aria-labelledby="network-heading">
+            <div class="metric-section-heading"><p class="eyebrow">Network</p><h3 id="network-heading">Bandwidth</h3></div>
             <div class="metric-header network-header">
               <div class="network-values">
                 <span class="network-value network-download">
@@ -138,6 +142,13 @@
         <div class="section-heading">
           <div><h2 id="settings-heading">Settings</h2></div>
           <button id="reset-settings" class="settings-command" type="button">Reset all</button>
+        </div>
+        <div id="settings-restart-banner" class="settings-restart-banner" role="status" hidden>
+          <div class="settings-restart-copy">
+            <strong id="settings-restart-title">Silo restart required</strong>
+            <span id="settings-restart-message">Some saved settings will take effect after Silo is restarted.</span>
+          </div>
+          <button id="settings-restart-now" class="restart-now" type="button"><span class="ui-icon icon-nodes" aria-hidden="true"></span><span id="settings-restart-button-label">Restart now</span></button>
         </div>
         <div id="settings-menu" class="settings-menu" aria-label="Tab settings"></div>
         <div id="settings-editor" hidden>

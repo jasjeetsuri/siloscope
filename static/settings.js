@@ -41,7 +41,7 @@
     }
     for (const key of preferences.systemOrder) grid.append(panels[key]);
     document.documentElement.style.setProperty("--chart-height", `${preferences.chartHeight}px`);
-    window.dispatchEvent(new Event("monitor-settings-change"));
+    window.dispatchEvent(new CustomEvent("monitor-settings-change", { detail: { chartMinutes: preferences.chartMinutes } }));
   }
 
   function commit() {
@@ -100,6 +100,21 @@
       });
       heightLabel.append(make("span", "", "Graph height"), output, height);
       options.append(heightLabel);
+      const durationLabel = make("label", "settings-duration");
+      const duration = make("select", "");
+      duration.setAttribute("aria-label", "Graph time window");
+      for (const minutes of [2, 3, 4, 5]) {
+        const option = make("option", "", `${minutes} minutes`);
+        option.value = String(minutes);
+        duration.append(option);
+      }
+      duration.value = String(preferences.chartMinutes);
+      duration.addEventListener("change", () => {
+        preferences.chartMinutes = Number(duration.value);
+        commit();
+      });
+      durationLabel.append(make("span", "", "Graph time window"), duration);
+      options.append(durationLabel);
     }
     const fields = make("fieldset", "settings-fieldset");
     fields.append(make("legend", "", "Visibility"));
@@ -122,7 +137,7 @@
     if (focusKey) options.querySelector(`[data-order="${focusKey}"]`)?.focus();
   }
 
-  for (const [key, definition] of Object.entries(model.groups)) {
+  for (const [key, definition] of Object.entries({ ...model.groups, transcoder: { label: "Transcoder" } })) {
     const button = make("button", "settings-menu-item");
     button.type = "button";
     const arrow = make("span", "", "\u203a");
@@ -135,26 +150,38 @@
       editor.hidden = false;
       const heading = document.getElementById("settings-group-heading");
       heading.textContent = definition.label;
-      renderOptions();
+      document.getElementById("reset-tab-settings").hidden = key === "transcoder";
+      document.getElementById("reset-settings").hidden = key === "transcoder";
+      if (key === "transcoder") TranscoderSettings.open(options, status);
+      else renderOptions();
       heading.focus();
     });
     menu.append(button);
   }
   document.getElementById("settings-back").addEventListener("click", () => {
+    if (activeGroup === "transcoder") {
+      if (!TranscoderSettings.canLeave()) return;
+      TranscoderSettings.leave();
+      status.textContent = "";
+    }
     editor.hidden = true;
     menu.hidden = false;
     menu.querySelector(`[data-group="${activeGroup}"]`).focus();
+    activeGroup = null;
+    document.getElementById("reset-settings").hidden = false;
   });
   document.getElementById("reset-settings").addEventListener("click", () => {
     preferences = model.normalize(null);
     commit();
-    if (activeGroup) renderOptions();
+    if (activeGroup && activeGroup !== "transcoder") renderOptions();
   });
   document.getElementById("reset-tab-settings").addEventListener("click", () => {
+    if (!activeGroup || activeGroup === "transcoder") return;
     for (const [key] of model.groups[activeGroup].options) preferences.visibility[`${activeGroup}.${key}`] = true;
     if (activeGroup === "system") {
       preferences.systemOrder = [...model.systemOrder];
       preferences.chartHeight = 140;
+      preferences.chartMinutes = 5;
     }
     commit();
     renderOptions();
@@ -163,7 +190,7 @@
     if (event.key !== model.storageKey && event.key !== null) return;
     preferences = model.load(storage);
     apply();
-    if (activeGroup) renderOptions();
+    if (activeGroup && activeGroup !== "transcoder") renderOptions();
   });
   apply();
 })();

@@ -50,9 +50,9 @@ func main() {
 	}
 
 	drawTrace(icon, trace, 38, color.NRGBA{R: 20, G: 15, B: 17, A: 230})
-	drawTrace(icon, trace, 19, color.NRGBA{R: 75, G: 199, B: 177, A: 255})
+	drawTrace(icon, trace, 19, color.NRGBA{R: 238, G: 139, B: 157, A: 255})
 	drawCircle(icon, trace[len(trace)-1], 25, color.NRGBA{R: 20, G: 15, B: 17, A: 230})
-	drawCircle(icon, trace[len(trace)-1], 13, color.NRGBA{R: 75, G: 199, B: 177, A: 255})
+	drawCircle(icon, trace[len(trace)-1], 13, color.NRGBA{R: 238, G: 139, B: 157, A: 255})
 
 	destination, err := os.Create(os.Args[2])
 	if err != nil {

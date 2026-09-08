@@ -1,0 +1,15 @@
+[
+  {"key":"playback.transcode_enabled","label":"Transcoding","group":"Transcoding","type":"boolean"},
+  {"key":"allow_4k_transcode","label":"Allow 4K transcoding","group":"Transcoding","type":"boolean"},
+  {"key":"playback.hw_accel","label":"Hardware acceleration","group":"Hardware","type":"select","options":[["auto","Auto"],["qsv","Intel Quick Sync (QSV)"],["vaapi","VA-API"],["nvenc","NVIDIA NVENC"],["videotoolbox","VideoToolbox (macOS)"],["none","Software"]]},
+  {"key":"playback.transcode_hardware_tone_map_enabled","label":"Hardware HDR tone mapping","group":"Tone Mapping","type":"boolean"},
+  {"key":"playback.transcode_software_tone_map_enabled","label":"Software HDR tone mapping","group":"Tone Mapping","type":"boolean"},
+  {"key":"enable_transcode_throttle","label":"Throttle transcoding","group":"Buffering","type":"boolean"},
+  {"key":"transcode_throttle_seconds","label":"Buffer ahead (seconds)","group":"Buffering","type":"number","min":0},
+  {"key":"playback.segment_retention_seconds","label":"Back buffer (seconds; 0 or 120+)","group":"Buffering","type":"number","min":0},
+  {"key":"playback.routing.direct_play_egress","label":"Direct play egress","group":"Routing","type":"select","options":[["prefer_proxy","Prefer proxy"],["proxy_only","Proxy only"],["prefer_api","Prefer API server"],["api_only","API server only"]]},
+  {"key":"playback.routing.remux_execution","label":"Remux execution","group":"Routing","type":"select","options":[["prefer_worker","Prefer worker"],["worker_only","Worker only"],["prefer_api","Prefer API server"],["api_only","API server only"]]},
+  {"key":"playback.routing.remux_egress","label":"Remux egress","group":"Routing","type":"select","options":[["prefer_proxy","Prefer proxy"],["proxy_only","Proxy only"],["prefer_api","Prefer API server"],["api_only","API server only"]]},
+  {"key":"playback.routing.video_transcode_execution","label":"Video transcode execution","group":"Routing","type":"select","options":[["prefer_worker","Prefer worker"],["worker_only","Worker only"],["prefer_api","Prefer API server"],["api_only","API server only"]]},
+  {"key":"playback.routing.video_transcode_egress","label":"Video transcode egress","group":"Routing","type":"select","options":[["prefer_proxy","Prefer proxy"],["proxy_only","Proxy only"],["prefer_api","Prefer API server"],["api_only","API server only"]]}
+]

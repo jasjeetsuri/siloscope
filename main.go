@@ -205,6 +205,10 @@ func (a *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/plex/sessions", a.plexSessionsJSON)
 	mux.HandleFunc("GET /api/plex/poster", a.plexPoster)
 	mux.HandleFunc("GET /api/nodes", a.proxyJSON("nodes", "/api/v1/admin/nodes", a.config.cacheTTL))
+	mux.HandleFunc("GET /api/transcoder", a.transcoderSettings)
+	mux.HandleFunc("PUT /api/transcoder", a.transcoderSettings)
+	mux.HandleFunc("GET /api/restart-status", a.restartStatus)
+	mux.HandleFunc("POST /api/restart", a.restartServer)
 
 	content, err := fs.Sub(staticFiles, "static")
 	if err != nil {

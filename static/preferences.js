@@ -14,6 +14,7 @@ const MonitorPreferences = (() => {
         ["disk.values", "Usage values", ".disk-summary", "disk"],
         ["disk.bars", "Usage bars", ".disk-track", "disk"],
         ["cpu", "CPU", ".cpu-panel"],
+        ["cpu.heading", "Heading", ".cpu-panel .metric-section-heading", "cpu"],
         ["cpu.value", "Current usage", ".cpu-panel .metric-header > div", "cpu"],
         ["cpu.detail", "Cores and load", "#cpu-detail", "cpu"],
         ["cpu.chart", "Graph", ".cpu-panel .chart-wrap", "cpu"],
@@ -21,6 +22,7 @@ const MonitorPreferences = (() => {
         ["cpu.time", "Time labels", ".cpu-panel .chart-footer", "cpu.chart"],
         ["cpu.processes", "Top CPU processes", ".cpu-processes", "cpu"],
         ["network", "Bandwidth", ".network-panel"],
+        ["network.heading", "Heading", ".network-panel .metric-section-heading", "network"],
         ["network.download", "Download value", ".network-download", "network"],
         ["network.upload", "Upload value", ".network-upload", "network"],
         ["network.detail", "Bandwidth detail", "#network-detail", "network"],
@@ -46,6 +48,9 @@ const MonitorPreferences = (() => {
         ["title", "Title", ".session-title", "cards"],
         ["subtitle", "Episode and media details", ".session-subtitle", "cards"],
         ["source", "Playback source", ".session-source", "cards"],
+        ["resolution", "Video resolution", ".session-resolution", "cards"],
+        ["tonemap", "Tone mapping", ".session-tonemap", "cards"],
+        ["audio", "Audio codec", ".session-audio", "cards"],
         ["method", "Play method", ".session-tags .tag-method, .session-tags .tag-transcode", "cards"],
         ["client", "Client", ".session-client", "cards"],
         ["node", "Playback node", ".session-node", "cards"],
@@ -76,7 +81,7 @@ const MonitorPreferences = (() => {
   };
 
   function normalize(raw) {
-    const result = { visibility: {}, systemOrder: [...systemOrder], chartHeight: 140 };
+    const result = { visibility: {}, systemOrder: [...systemOrder], chartHeight: 140, chartMinutes: 5 };
     for (const [group, definition] of Object.entries(groups)) {
       for (const [key] of definition.options) {
         const fullKey = `${group}.${key}`;
@@ -87,6 +92,7 @@ const MonitorPreferences = (() => {
       result.systemOrder = [...new Set([...raw.systemOrder.filter(key => systemOrder.includes(key)), ...systemOrder])];
     }
     if (Number.isFinite(raw?.chartHeight)) result.chartHeight = Math.min(220, Math.max(100, raw.chartHeight));
+    if ([2, 3, 4, 5].includes(raw?.chartMinutes)) result.chartMinutes = raw.chartMinutes;
     return result;
   }
 

@@ -43,41 +43,53 @@ type plexMetadata struct {
 	Transcode struct {
 		VideoDecision string `xml:"videoDecision,attr"`
 		AudioDecision string `xml:"audioDecision,attr"`
+		AudioCodec    string `xml:"audioCodec,attr"`
+		Width         int    `xml:"width,attr"`
+		Height        int    `xml:"height,attr"`
 	} `xml:"TranscodeSession"`
 	Media []struct {
 		Selected        string `xml:"selected,attr"`
 		VideoResolution string `xml:"videoResolution,attr"`
 		VideoDecision   string `xml:"videoDecision,attr"`
 		AudioDecision   string `xml:"audioDecision,attr"`
+		AudioCodec      string `xml:"audioCodec,attr"`
 		Parts           []struct {
 			Decision string `xml:"decision,attr"`
 			Streams  []struct {
 				Type     int    `xml:"streamType,attr"`
 				Decision string `xml:"decision,attr"`
+				Selected string `xml:"selected,attr"`
+				Codec    string `xml:"codec,attr"`
+				Profile  string `xml:"profile,attr"`
 			} `xml:"Stream"`
 		} `xml:"Part"`
 	} `xml:"Media"`
 }
 
 type plexPlayback struct {
-	ID            string  `json:"id"`
-	Source        string  `json:"source"`
-	Title         string  `json:"media_title"`
-	MediaType     string  `json:"media_type"`
-	Series        string  `json:"series_name,omitempty"`
-	Season        *int    `json:"season_number,omitempty"`
-	Episode       *int    `json:"episode_number,omitempty"`
-	EpisodeName   string  `json:"episode_name,omitempty"`
-	Subtitle      string  `json:"subtitle,omitempty"`
-	Username      string  `json:"username"`
-	Client        string  `json:"client_name"`
-	Method        string  `json:"play_method"`
-	Profile       string  `json:"profile_name,omitempty"`
-	Paused        bool    `json:"is_paused"`
-	PlaybackState string  `json:"playback_state"`
-	Duration      float64 `json:"file_duration"`
-	Position      float64 `json:"position_seconds"`
-	Poster        string  `json:"poster_url,omitempty"`
+	ID               string  `json:"id"`
+	Source           string  `json:"source"`
+	Title            string  `json:"media_title"`
+	MediaType        string  `json:"media_type"`
+	Series           string  `json:"series_name,omitempty"`
+	Season           *int    `json:"season_number,omitempty"`
+	Episode          *int    `json:"episode_number,omitempty"`
+	EpisodeName      string  `json:"episode_name,omitempty"`
+	Subtitle         string  `json:"subtitle,omitempty"`
+	Username         string  `json:"username"`
+	Client           string  `json:"client_name"`
+	Method           string  `json:"play_method"`
+	Profile          string  `json:"profile_name,omitempty"`
+	Resolution       string  `json:"source_video_resolution,omitempty"`
+	TargetResolution string  `json:"target_resolution,omitempty"`
+	AudioCodec       string  `json:"source_audio_codec,omitempty"`
+	AudioProfile     string  `json:"source_audio_profile,omitempty"`
+	TargetAudioCodec string  `json:"target_audio_codec,omitempty"`
+	Paused           bool    `json:"is_paused"`
+	PlaybackState    string  `json:"playback_state"`
+	Duration         float64 `json:"file_duration"`
+	Position         float64 `json:"position_seconds"`
+	Poster           string  `json:"poster_url,omitempty"`
 }
 
 func loadPlexConfig() (*url.URL, string, error) {
@@ -118,6 +130,7 @@ func normalizePlexSession(metadata plexMetadata) plexPlayback {
 	method := "direct_play"
 	video, audio := metadata.Transcode.VideoDecision, metadata.Transcode.AudioDecision
 	profile := ""
+	audioCodec, audioProfile := "", ""
 	if len(metadata.Media) > 0 {
 		media := metadata.Media[0]
 		for _, candidate := range metadata.Media {
@@ -127,6 +140,7 @@ func normalizePlexSession(metadata plexMetadata) plexPlayback {
 			}
 		}
 		profile = media.VideoResolution
+		audioCodec = media.AudioCodec
 		if video == "" {
 			video = media.VideoDecision
 		}
@@ -138,6 +152,9 @@ func normalizePlexSession(metadata plexMetadata) plexPlayback {
 				method = "remux"
 			}
 			for _, stream := range part.Streams {
+				if stream.Type == 2 && stream.Selected == "1" {
+					audioCodec, audioProfile = stream.Codec, stream.Profile
+				}
 				if stream.Type == 1 && video == "" {
 					video = stream.Decision
 				}
@@ -156,9 +173,16 @@ func normalizePlexSession(metadata plexMetadata) plexPlayback {
 	}
 	session := plexPlayback{
 		ID: "plex:" + metadata.Key, Source: "plex", Title: metadata.Title, MediaType: metadata.Type,
-		Username: metadata.User.Title, Client: metadata.Player.Title, Method: method, Profile: profile,
+		Username: metadata.User.Title, Client: metadata.Player.Title, Method: method,
+		Resolution: profile, AudioCodec: audioCodec, AudioProfile: audioProfile,
 		Paused: metadata.Player.State == "paused", PlaybackState: metadata.Player.State,
 		Duration: metadata.Duration / 1000, Position: metadata.ViewOffset / 1000,
+	}
+	if video == "transcode" && metadata.Transcode.Width > 0 && metadata.Transcode.Height > 0 {
+		session.TargetResolution = strconv.Itoa(metadata.Transcode.Width) + "x" + strconv.Itoa(metadata.Transcode.Height)
+	}
+	if audio == "transcode" {
+		session.TargetAudioCodec = metadata.Transcode.AudioCodec
 	}
 	if session.Client == "" {
 		session.Client = metadata.Player.Product
