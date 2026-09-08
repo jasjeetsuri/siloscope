@@ -2,6 +2,15 @@
 
 A low-overhead, mobile-first wallboard for Silo CPU, memory, network bandwidth, disk usage, playback-node health, and active Silo and Plex playback sessions. A small Go server keeps API credentials out of the browser and retains five minutes of CPU, memory, download, and upload samples in memory so charts survive page reloads.
 
+## Compatible with
+
+| Silo | Plex |
+| --- | --- |
+| <a href="https://github.com/Silo-Server/silo-server"><img src="docs/images/silo-logo.png" alt="Silo logo" width="64" height="64"></a> | <a href="https://www.plex.tv/"><img src="docs/images/plex-logo.svg" alt="Plex logo" width="64" height="64"></a> |
+| Resource and node monitoring, playback, and transcoder settings | Optional playback monitoring and session termination |
+
+Logos identify compatible services; no affiliation or endorsement is implied. See [logo sources](docs/images/LOGOS.md).
+
 ## Screenshots
 
 Mobile views captured from the current UI using live server data and a read-only settings preview. No playback was terminated during capture.
