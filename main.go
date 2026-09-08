@@ -209,6 +209,7 @@ func (a *application) routes() http.Handler {
 	mux.HandleFunc("PUT /api/transcoder", a.transcoderSettings)
 	mux.HandleFunc("GET /api/restart-status", a.restartStatus)
 	mux.HandleFunc("POST /api/restart", a.restartServer)
+	mux.HandleFunc("POST /api/playback/terminate", a.terminatePlayback)
 
 	content, err := fs.Sub(staticFiles, "static")
 	if err != nil {

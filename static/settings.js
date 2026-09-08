@@ -10,7 +10,7 @@
   const editor = document.getElementById("settings-editor");
   const options = document.getElementById("settings-options");
   const status = document.getElementById("settings-status");
-  const visibilityStyles = document.querySelector('link[href="/styles.css"]').sheet;
+  const visibilityStyles = document.querySelector('link[rel="stylesheet"][href^="/styles.css"]').sheet;
   const firstVisibilityRule = visibilityStyles.cssRules.length;
   let visibilityRuleCount = 0;
   const panels = Object.fromEntries(model.systemOrder.map(key => [key, document.querySelector(model.groups.system.options.find(option => option[0] === key)[2])]));

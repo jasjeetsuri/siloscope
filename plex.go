@@ -21,6 +21,9 @@ type plexMediaContainer struct {
 }
 
 type plexMetadata struct {
+	Session struct {
+		ID string `xml:"id,attr"`
+	} `xml:"Session"`
 	Key                  string  `xml:"sessionKey,attr"`
 	RatingKey            string  `xml:"ratingKey,attr"`
 	GrandparentRatingKey string  `xml:"grandparentRatingKey,attr"`
@@ -67,6 +70,7 @@ type plexMetadata struct {
 }
 
 type plexPlayback struct {
+	TerminationID    string  `json:"termination_id,omitempty"`
 	ID               string  `json:"id"`
 	Source           string  `json:"source"`
 	Title            string  `json:"media_title"`
@@ -199,6 +203,7 @@ func normalizePlexSession(metadata plexMetadata) plexPlayback {
 	if _, err := strconv.ParseUint(posterKey, 10, 64); err == nil && posterKey != "0" {
 		session.Poster = "/api/plex/poster?id=" + posterKey
 	}
+	session.TerminationID = metadata.Session.ID
 	return session
 }
 

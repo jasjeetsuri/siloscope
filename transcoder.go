@@ -12,6 +12,71 @@ import (
 	"strings"
 )
 
+func (app *application) terminatePlayback(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.Header().Set("Content-Type", "application/json")
+	if !sameOriginSettingsRequest(request) {
+		writeJSONError(writer, http.StatusForbidden, "Same-origin request required")
+		return
+	}
+	var input struct {
+		Source string `json:"source"`
+		ID     string `json:"id"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 1024))
+	decoder.DisallowUnknownFields()
+	var extra any
+	if decoder.Decode(&input) != nil || decoder.Decode(&extra) != io.EOF || (input.Source != "silo" && input.Source != "plex") || len(input.ID) == 0 || len(input.ID) > 200 || strings.Trim(input.ID, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != "" {
+		writeJSONError(writer, http.StatusBadRequest, "Invalid playback session")
+		return
+	}
+	var status int
+	var err error
+	if input.Source == "silo" {
+		_, status, err = app.transcoderRequest(request, http.MethodPost, "/api/v1/admin/sessions/"+input.ID+"/terminate", []byte(`{"reason":"Stopped by administrator"}`))
+	} else {
+		if app.config.plexURL == nil {
+			writeJSONError(writer, http.StatusServiceUnavailable, "Plex is not configured")
+			return
+		}
+		upstream := *app.config.plexURL
+		upstream.Path = strings.TrimRight(upstream.Path, "/") + "/status/sessions/terminate"
+		upstream.RawQuery = url.Values{"sessionId": {input.ID}, "reason": {"Stopped by administrator"}}.Encode()
+		upstreamRequest, requestErr := http.NewRequestWithContext(request.Context(), http.MethodGet, upstream.String(), nil)
+		if requestErr != nil {
+			writeJSONError(writer, http.StatusBadGateway, "Stop request could not be sent")
+			return
+		}
+		upstreamRequest.Header.Set("X-Plex-Token", app.config.plexToken)
+		client := *app.client
+		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+		response, responseErr := client.Do(upstreamRequest)
+		err = responseErr
+		if response != nil {
+			status = response.StatusCode
+			response.Body.Close()
+		}
+	}
+	if status == http.StatusNotFound {
+		writeJSONError(writer, http.StatusNotFound, "Session no longer available or termination unsupported")
+		return
+	}
+	if status == http.StatusForbidden || status == http.StatusUnauthorized {
+		writeJSONError(writer, http.StatusForbidden, "Server does not permit stopping this session")
+		return
+	}
+	if err != nil || status < 200 || status >= 300 {
+		writeJSONError(writer, http.StatusBadGateway, "Stop could not be confirmed. Check playback before retrying.")
+		return
+	}
+	app.cache.mu.Lock()
+	delete(app.cache.entries, "sessions")
+	delete(app.cache.entries, "plex-sessions")
+	app.cache.mu.Unlock()
+	writer.WriteHeader(http.StatusAccepted)
+	_, _ = io.WriteString(writer, `{"status":"requested"}`)
+}
+
 func (app *application) restartStatus(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.Header().Set("Content-Type", "application/json")

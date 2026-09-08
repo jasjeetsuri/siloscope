@@ -201,6 +201,34 @@ function smoothPath(points) {
   return commands.join(" ");
 }
 
+function appendChartFill(svg, paths, color, key) {
+  const layer = svgElement("g", { class: "chart-fill", "pointer-events": "none" });
+  const definitions = svgElement("defs", {});
+  layer.append(definitions);
+  paths.forEach((segment, index) => {
+    if (segment.length < 2) return;
+    const gradientId = `${svg.id}-${key}-fill-${index}`;
+    const gradient = svgElement("linearGradient", {
+      id: gradientId,
+      gradientUnits: "userSpaceOnUse",
+      x1: 0,
+      x2: 0,
+      y1: Math.min(169, ...segment.map((point) => point.y)),
+      y2: 170,
+    });
+    gradient.append(
+      svgElement("stop", { offset: "0%", "stop-color": color, "stop-opacity": 0.32 }),
+      svgElement("stop", { offset: "100%", "stop-color": color, "stop-opacity": 0 }),
+    );
+    definitions.append(gradient);
+    layer.append(svgElement("path", {
+      d: `${smoothPath(segment)} L ${segment.at(-1).x.toFixed(1)} 170 L ${segment[0].x.toFixed(1)} 170 Z`,
+      fill: `url(#${gradientId})`,
+    }));
+  });
+  svg.insertBefore(layer, svg.querySelector(".chart-line"));
+}
+
 function historyLabel(duration) {
   if (duration >= HISTORY_WINDOW_MS) return "5m ago";
   if (duration < 60_000) return `${Math.max(1, Math.round(duration / 1000))}s ago`;
@@ -210,16 +238,9 @@ function historyLabel(duration) {
 function renderChart(svg, points, color, rangeLabel) {
   svg.setAttribute("aria-label", `${svg === elements.cpuChart ? "CPU" : "Memory"} usage over the last ${state.chartMinutes} minutes`);
   svg.replaceChildren();
-  svg.append(
-    svgElement("rect", { x: 0, y: 0, width: 600, height: 17, class: "chart-threshold-danger" }),
-    svgElement("rect", { x: 0, y: 17, width: 600, height: 17, class: "chart-threshold-warning" }),
-  );
-  if (svg === elements.cpuChart) {
-    svg.append(svgElement("rect", { x: 0, y: 153, width: 600, height: 17, class: "chart-threshold-low" }));
-  }
   for (const value of [0, 25, 50, 75, 100]) {
     const y = 170 - (value / 100) * 170;
-    svg.append(svgElement("line", { x1: 0, y1: y, x2: 600, y2: y, class: "chart-grid" }));
+    svg.append(svgElement("line", { x1: 0, y1: y, x2: 600, y2: y, class: value === 0 ? "chart-grid chart-baseline" : "chart-grid" }));
   }
 
   const now = Date.now();
@@ -228,6 +249,7 @@ function renderChart(svg, points, color, rangeLabel) {
   const displayDuration = Math.max(RESOURCE_POLL_INTERVAL_MS, collectedDuration);
   const start = now - displayDuration;
   const paths = seriesPaths(points, now, start);
+  appendChartFill(svg, paths, color, "usage");
   for (const segment of paths) {
     svg.append(svgElement("path", { d: smoothPath(segment), class: "chart-line", stroke: color }));
   }
@@ -246,16 +268,6 @@ function renderChart(svg, points, color, rangeLabel) {
         }),
       );
     }
-    svg.append(
-      svgElement("ellipse", {
-        cx: latest.x,
-        cy: latest.y,
-        rx: circularMarkerRadiusX(svg, 4),
-        ry: 4,
-        class: "chart-point",
-        fill: color,
-      }),
-    );
   }
   svg.append(svgElement("rect", { x: 0, y: 0, width: 600, height: 170, class: "chart-hit-area" }));
   rangeLabel.textContent = firstSample ? historyLabel(collectedDuration) : "Starting now";
@@ -274,7 +286,7 @@ function renderNetworkChart() {
   svg.replaceChildren();
   for (const value of [0, 25, 50, 75, 100]) {
     const y = 170 - (value / 100) * 170;
-    svg.append(svgElement("line", { x1: 0, y1: y, x2: 600, y2: y, class: "chart-grid" }));
+    svg.append(svgElement("line", { x1: 0, y1: y, x2: 600, y2: y, class: value === 0 ? "chart-grid chart-baseline" : "chart-grid" }));
   }
 
   const now = Date.now();
@@ -287,19 +299,9 @@ function renderNetworkChart() {
 
   for (const [key, color] of [["download", "#79b8ed"], ["upload", "#e6bd72"]]) {
     const paths = seriesPaths(state.network, now, start, maximum, key);
+    appendChartFill(svg, paths, color, key);
     for (const segment of paths) {
       svg.append(svgElement("path", { d: smoothPath(segment), class: "chart-line", stroke: color }));
-    }
-    const latest = paths.at(-1)?.at(-1);
-    if (latest) {
-      svg.append(svgElement("ellipse", {
-        cx: latest.x,
-        cy: latest.y,
-        rx: circularMarkerRadiusX(svg, 4),
-        ry: 4,
-        class: "chart-point",
-        fill: color,
-      }));
     }
   }
 
@@ -680,6 +682,111 @@ function playbackIcon(className) {
   return wrapper;
 }
 
+const playbackStops = new Map();
+const selectedPlayback = new Set();
+let playbackSelectionMode = false;
+let playbackBatchPending = false;
+const selectionToggle = document.querySelector("#playback-select");
+const terminateSelected = document.querySelector("#playback-terminate");
+
+function playbackTarget(session) {
+  const source = session.source === "plex" ? "plex" : "silo";
+  const id = source === "plex" ? session.termination_id : session.session_id || session.id;
+  return id ? { source, id: String(id), key: `${source}:${id}` } : null;
+}
+
+function updatePlaybackSelection() {
+  elements.sessions.classList.toggle("selection-mode", playbackSelectionMode);
+  const selectionLabel = playbackSelectionMode ? "Cancel selection" : "Select sessions to terminate";
+  selectionToggle.setAttribute("aria-label", selectionLabel);
+  selectionToggle.title = selectionLabel;
+  selectionToggle.setAttribute("aria-pressed", String(playbackSelectionMode));
+  selectionToggle.disabled = playbackBatchPending;
+  terminateSelected.hidden = !playbackSelectionMode;
+  terminateSelected.textContent = playbackBatchPending ? "Terminating..." : `Terminate (${selectedPlayback.size})`;
+  terminateSelected.disabled = playbackBatchPending || selectedPlayback.size === 0;
+  for (const shell of elements.sessions.querySelectorAll(".session-selectable")) {
+    const checkbox = shell.querySelector("input");
+    const key = shell.dataset.playbackKey;
+    checkbox.checked = selectedPlayback.has(key);
+    checkbox.disabled = !key || playbackBatchPending || Boolean(playbackStops.get(key)?.pending);
+    checkbox.tabIndex = playbackSelectionMode ? 0 : -1;
+    shell.querySelector(".session-selection").inert = !playbackSelectionMode;
+    shell.querySelector(".session-stop-status").textContent = playbackStops.get(key)?.message || "";
+  }
+}
+
+selectionToggle.addEventListener("click", () => {
+  playbackSelectionMode = !playbackSelectionMode;
+  selectedPlayback.clear();
+  updatePlaybackSelection();
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && playbackSelectionMode && !playbackBatchPending) {
+    playbackSelectionMode = false;
+    selectedPlayback.clear();
+    updatePlaybackSelection();
+    selectionToggle.focus();
+  }
+});
+
+terminateSelected.addEventListener("click", async () => {
+  if (playbackBatchPending) return;
+  const targets = new Map(state.sessions.map(playbackTarget).filter(Boolean).filter(target => selectedPlayback.has(target.key) && !playbackStops.get(target.key)?.pending).map(target => [target.key, target]));
+  if (!targets.size) return;
+  playbackBatchPending = true;
+  for (const key of targets.keys()) playbackStops.set(key, { pending: true, message: "Terminating playback..." });
+  updatePlaybackSelection();
+  await Promise.all(Array.from(targets.values(), async ({ source, id, key }) => {
+    try {
+      const response = await fetch("/api/playback/terminate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Siloscope-Settings": "1" },
+        body: JSON.stringify({ source, id }),
+        signal: AbortSignal.timeout(15000),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Termination request failed");
+      playbackStops.set(key, { pending: !result.preview, message: result.preview ? "Preview only; playback unchanged." : "Termination requested; waiting for playback to end." });
+      selectedPlayback.delete(key);
+      if (!result.preview) setTimeout(() => {
+        if (playbackStops.get(key)?.pending) {
+          playbackStops.set(key, { pending: false, message: "Termination requested. Check playback before retrying." });
+          updatePlaybackSelection();
+        }
+      }, 30000);
+    } catch (error) {
+      playbackStops.set(key, { pending: false, message: error.name === "TimeoutError" ? "Termination not confirmed. Check playback before retrying." : error.message });
+    }
+    updatePlaybackSelection();
+  }));
+  playbackBatchPending = false;
+  updatePlaybackSelection();
+});
+
+function selectablePlaybackCard(card, session) {
+  const target = playbackTarget(session);
+  const shell = elementWithClass("div", "session-selectable");
+  shell.dataset.playbackKey = target?.key || "";
+  const label = elementWithClass("label", "session-selection");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.setAttribute("aria-label", `Select ${sessionTitle(session)} for ${session.username || "user"}${target ? "" : " (termination unavailable)"}`);
+  label.title = target ? "Select session" : "Termination unavailable";
+  checkbox.addEventListener("change", () => {
+    if (!target) return;
+    if (checkbox.checked) selectedPlayback.add(target.key);
+    else selectedPlayback.delete(target.key);
+    updatePlaybackSelection();
+  });
+  label.append(checkbox);
+  const feedback = elementWithClass("div", "session-stop-status");
+  feedback.setAttribute("role", "status");
+  card.querySelector(".session-copy").append(feedback);
+  shell.append(label, card);
+  return shell;
+}
+
 function createSessionCard(session) {
   const card = elementWithClass("article", `session-card${session.is_paused ? " paused" : ""}`);
   const poster = elementWithClass("div", "poster");
@@ -689,6 +796,15 @@ function createSessionCard(session) {
     image.alt = "";
     image.loading = "lazy";
     image.decoding = "async";
+    image.addEventListener("load", () => {
+      const backdrop = elementWithClass("div", "session-backdrop");
+      const artwork = document.createElement("img");
+      artwork.src = image.currentSrc || image.src;
+      artwork.alt = "";
+      backdrop.setAttribute("aria-hidden", "true");
+      backdrop.append(artwork);
+      card.prepend(backdrop);
+    }, { once: true });
     image.addEventListener("error", () => {
       image.remove();
       poster.prepend(playbackIcon("poster-fallback"));
@@ -716,7 +832,10 @@ function createSessionCard(session) {
   addTag(tags, details.toneMap, "session-tonemap");
   addTag(tags, details.audio, "session-audio");
   addTag(tags, session.client_label || session.client_name, "session-client");
-  addTag(tags, session.node_display_name || session.reporting_node, "session-node");
+  const remoteTranscode = session.routing_execution_node_id || session.transcode_node_url;
+  if (remoteTranscode) {
+    addTag(tags, session.routing_execution_node_name || session.node_display_name || "Transcode server", "session-node");
+  }
   addTag(tags, session.profile_name || session.profile_id, "session-profile");
   copy.append(tags);
 
@@ -741,7 +860,7 @@ function createSessionCard(session) {
   );
   copy.append(footer);
   card.append(poster, copy);
-  return card;
+  return selectablePlaybackCard(card, session);
 }
 
 function showSessions(payload) {
@@ -751,7 +870,10 @@ function showSessions(payload) {
   elements.playingBadge.textContent = sessions.length > 99 ? "99+" : String(sessions.length);
   elements.playingBadge.setAttribute("aria-label", `${sessions.length} active ${sessions.length === 1 ? "stream" : "streams"}`);
   elements.playingBadge.hidden = sessions.length === 0;
+  const activeKeys = new Set(sessions.map(playbackTarget).filter(Boolean).map(target => target.key));
+  for (const key of selectedPlayback) if (!activeKeys.has(key)) selectedPlayback.delete(key);
   elements.sessions.replaceChildren();
+  updatePlaybackSelection();
   if (sessions.length === 0) {
     const empty = elementWithClass("div", "empty-state");
     empty.append(
@@ -766,6 +888,7 @@ function showSessions(payload) {
   for (const session of sessions) {
     elements.sessions.append(createSessionCard(session));
   }
+  updatePlaybackSelection();
   renderNodes();
 }
 

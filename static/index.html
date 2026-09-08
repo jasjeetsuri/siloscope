@@ -8,15 +8,15 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Siloscope">
     <title>Siloscope</title>
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
-    <link rel="manifest" href="/site.webmanifest">
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=ios-flipped-20260908-r2">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=ios-flipped-20260908-r2">
+    <link rel="manifest" href="/site.webmanifest?v=ios-flipped-20260908-r2">
+    <link rel="stylesheet" href="/styles.css?v=corner-clip-20260908-r1">
     <script src="/preferences.js" defer></script>
-    <script src="/app.js" defer></script>
+    <script src="/app.js?v=corner-clip-20260908-r1" defer></script>
     <script src="/transcoder.js" defer></script>
     <script src="/restart.js" defer></script>
-    <script src="/settings.js" defer></script>
+    <script src="/settings.js?v=playback-20260908" defer></script>
   </head>
   <body>
     <header class="topbar view-banner">
@@ -126,6 +126,10 @@
           <div>
             <p class="eyebrow">Live sessions</p>
             <h2 id="sessions-heading">Now Playing</h2>
+          </div>
+          <div class="playback-actions">
+            <button id="playback-select" type="button" aria-pressed="false" aria-label="Select sessions to terminate" title="Select sessions to terminate"><span class="ui-icon icon-select-sessions" aria-hidden="true"></span></button>
+            <button id="playback-terminate" type="button" hidden disabled>Terminate (0)</button>
           </div>
           <span id="session-count" class="count-badge">0 streams</span>
         </div>
