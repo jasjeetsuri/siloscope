@@ -260,6 +260,12 @@ func (a *application) captureResourceSample(ctx context.Context) {
 	if parsed, err := time.Parse(time.RFC3339, payload.SampledAt); err == nil {
 		timestamp = parsed
 	}
+	a.processes.mu.RLock()
+	if a.processes.latest.Available && a.processes.latest.CPU != nil {
+		payload.System.CPU = a.processes.latest.CPU
+		timestamp = a.processes.latest.SampledAt
+	}
+	a.processes.mu.RUnlock()
 	var memory *float64
 	if payload.System.MemoryUsed != nil && payload.System.MemoryTotal != nil && *payload.System.MemoryTotal > 0 {
 		percentage := *payload.System.MemoryUsed / *payload.System.MemoryTotal * 100

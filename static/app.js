@@ -534,7 +534,7 @@ function showDisks(disks) {
   }
 }
 
-function showResourceSample(payload) {
+function showResourceSample(payload, hostCPU = null) {
   const system = payload?.system;
   if (!payload?.available || !system) {
     elements.resourceMessage.hidden = false;
@@ -545,17 +545,22 @@ function showResourceSample(payload) {
   }
 
   elements.resourceMessage.hidden = true;
-  const cpu = validPercent(Number(system.cpu_pct));
+  const cpu = validPercent(hostCPU ? hostCPU.cpu_pct : Number(system.cpu_pct));
   const used = Number(system.mem_used_mb);
   const total = Number(system.mem_total_mb);
   const memory = total > 0 ? validPercent((used / total) * 100) : null;
   const sampledAt = Date.parse(payload.sampled_at) || Date.now();
 
-  appendSample(state.cpu, { t: sampledAt, value: cpu });
+  appendSample(state.cpu, { t: hostCPU ? Date.parse(hostCPU.sampled_at) : sampledAt, value: cpu });
   appendSample(state.memory, { t: sampledAt, value: memory });
 
   const cpuValue = cpu === null ? "--%" : `${Math.round(cpu)}%`;
-  const cpuDetail = Number.isFinite(system.cores)
+  const hostLoadDetail = Number.isFinite(hostCPU?.load1) && hostCPU.load1 >= 0
+    ? `load ${hostCPU.load1.toFixed(2)}`
+    : "load unavailable";
+  const cpuDetail = hostCPU
+    ? (hostCPU.cores > 0 ? `${hostCPU.cores} cores · ${hostLoadDetail}` : hostLoadDetail)
+    : Number.isFinite(system.cores)
     ? `${system.cores} cores · load ${Number(system.load1 || 0).toFixed(2)}`
     : "Aggregate usage";
   const ramValue = memory === null ? "--%" : `${Math.round(memory)}%`;
@@ -1093,6 +1098,7 @@ function showProcesses(payload) {
     list.append(row);
   }
   if (!list.childElementCount) list.textContent = "Process metrics unavailable";
+  return Number.isFinite(payload.cpu_pct) ? payload : null;
 }
 
 async function refreshResources() {
@@ -1104,9 +1110,9 @@ async function refreshResources() {
       loadResourceHistory(),
       fetchJSON("/api/processes"),
     ]);
-    showProcesses(processes.status === "fulfilled" ? processes.value : null);
+    const hostCPU = showProcesses(processes.status === "fulfilled" ? processes.value : null);
     if (resources.status === "rejected") throw resources.reason;
-    showResourceSample(resources.value);
+    showResourceSample(resources.value, hostCPU);
     if (history.status === "rejected") renderNetworkChart();
     state.resourceOK = true;
     noteSuccess();
