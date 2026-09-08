@@ -385,6 +385,10 @@ h1 {
   --icon-source: url("/icons/settings.svg");
 }
 
+.icon-back {
+  --icon-source: url("/icons/arrow-left.svg");
+}
+
 .tab-icon {
   width: 25px;
   height: 25px;
@@ -854,18 +858,13 @@ h2 {
 
 .chart-crosshair {
   pointer-events: none;
-  stroke: var(--primary);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
 
 .chart-scrub-point {
   pointer-events: none;
-  fill: var(--primary);
-  stroke: var(--background);
-  stroke-width: 1.5;
-  filter: drop-shadow(0 0 4px rgb(238 139 157 / 0.65));
-  vector-effect: non-scaling-stroke;
+  stroke: none;
 }
 
 .chart-scale {
@@ -1113,6 +1112,22 @@ h2 {
   border-color: rgb(67 211 162 / 0.28);
   color: var(--success);
   background: rgb(67 211 162 / 0.08);
+}
+
+.silo-session-tags { align-items: center; }
+.silo-session-tags .tag {
+  line-height: 14px;
+  padding-block: 4px 2px;
+}
+.tag-jellyfin {
+  color: #b568cc;
+  border-color: rgb(181 104 204 / 0.35);
+  background: rgb(181 104 204 / 0.12);
+}
+.tag-hardware {
+  color: #99edf3;
+  border-color: rgb(45 172 187 / 0.35);
+  background: rgb(45 172 187 / 0.12);
 }
 
 .tag-transcode {

@@ -340,6 +340,8 @@ function updateScrub(svg, clientX) {
 
   const bounds = svg.getBoundingClientRect();
   const ratio = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width));
+  const markerRadius = 6 + (bounds.height > 0 ? 0.75 * 170 / bounds.height : 0.75);
+  const trackingColor = view.kind === "network" ? "#b8b8b8" : svg === elements.ramChart ? "#4bc7b1" : "#ee8b9d";
   const targetTime = view.start + ratio * (view.now - view.start);
   const sample = view.points.reduce((nearest, point) => (
     Math.abs(point.t - targetTime) < Math.abs(nearest.t - targetTime) ? point : nearest
@@ -348,17 +350,17 @@ function updateScrub(svg, clientX) {
 
   if (view.kind === "network") {
     svg.querySelectorAll(".chart-crosshair, .chart-scrub-point").forEach((element) => element.remove());
-    svg.append(svgElement("line", { x1: x, y1: 0, x2: x, y2: 170, class: "chart-crosshair" }));
+    svg.append(svgElement("line", { x1: x, y1: 0, x2: x, y2: 170, class: "chart-crosshair", stroke: trackingColor }));
     for (const [key, color] of [["download", "#79b8ed"], ["upload", "#e6bd72"]]) {
       if (sample[key] === null) continue;
       const y = 170 - (sample[key] / view.maximum) * 170;
       svg.append(svgElement("ellipse", {
         cx: x,
         cy: y,
-        rx: circularMarkerRadiusX(svg, 6),
-        ry: 6,
+        rx: circularMarkerRadiusX(svg, markerRadius),
+        ry: markerRadius,
         class: "chart-scrub-point",
-        style: `fill: ${color}`,
+        fill: color,
       }));
     }
     elements.downloadValue.textContent = formatBandwidth(sample.download);
@@ -372,13 +374,14 @@ function updateScrub(svg, clientX) {
 
   svg.querySelectorAll(".chart-crosshair, .chart-scrub-point").forEach((element) => element.remove());
   svg.append(
-    svgElement("line", { x1: x, y1: 0, x2: x, y2: 170, class: "chart-crosshair" }),
+    svgElement("line", { x1: x, y1: 0, x2: x, y2: 170, class: "chart-crosshair", stroke: trackingColor }),
     svgElement("ellipse", {
       cx: x,
       cy: y,
-      rx: circularMarkerRadiusX(svg, 6),
-      ry: 6,
+      rx: circularMarkerRadiusX(svg, markerRadius),
+      ry: markerRadius,
       class: "chart-scrub-point",
+      fill: trackingColor,
     }),
   );
   view.valueElement.textContent = `${Math.round(sample.value)}%`;
@@ -824,16 +827,25 @@ function createSessionCard(session) {
   );
 
   const tags = elementWithClass("div", "session-tags");
+  if (session.source !== "plex") tags.classList.add("silo-session-tags");
   addTag(tags, session.source === "plex" ? "Plex" : "Silo", `session-source source-${session.source === "plex" ? "plex" : "silo"}`);
+  if (session.source !== "plex" && session.is_jellyfin_client === true) addTag(tags, "JF", "session-source tag-jellyfin");
   const method = String(session.effective_play_method || session.play_method || "unknown").toLowerCase();
   addTag(tags, humanize(method), method.includes("transcode") || method === "audio" ? "tag-transcode" : "tag-method");
+  if (session.source !== "plex") {
+    const videoDecision = String(session.video_decision || session.play_method || "").trim().toLowerCase();
+    const accelerator = String(session.transcode_hw_accel || "").trim().toLowerCase();
+    if (videoDecision === "transcode" && accelerator && !["none", "auto", "unknown", "software"].includes(accelerator)) {
+      addTag(tags, `HW ${accelerator === "videotoolbox" ? "VideoToolbox" : accelerator.toUpperCase()}`, "tag-hardware");
+    }
+  }
   const details = playbackDetails(session);
   addTag(tags, details.resolution, "session-resolution");
   addTag(tags, details.toneMap, "session-tonemap");
   addTag(tags, details.audio, "session-audio");
   addTag(tags, session.client_label || session.client_name, "session-client");
   const remoteTranscode = session.routing_execution_node_id || session.transcode_node_url;
-  if (remoteTranscode) {
+  if (session.source === "plex" && remoteTranscode) {
     addTag(tags, session.routing_execution_node_name || session.node_display_name || "Transcode server", "session-node");
   }
   addTag(tags, session.profile_name || session.profile_id, "session-profile");
