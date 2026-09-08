@@ -4,7 +4,7 @@ A low-overhead, mobile-first wallboard for Silo CPU, memory, network bandwidth, 
 
 ## Screenshots
 
-Mobile views of a live Silo server.
+Mobile views captured from the current UI using live server data and a read-only settings preview. No playback was terminated during capture.
 
 | System | Playing |
 | --- | --- |
@@ -13,6 +13,10 @@ Mobile views of a live Silo server.
 | Nodes | Settings |
 | --- | --- |
 | <img src="docs/images/nodes.png" alt="Nodes view with health, routed streams, jobs, and resource usage" width="280"> | <img src="docs/images/settings.png" alt="System settings with item ordering, graph height, and visibility controls" width="280"> |
+
+| Playback selection | Transcoder settings |
+| --- | --- |
+| <img src="docs/images/playback-selection.png" alt="Playing view with session selection circles and the batch Terminate button" width="280"> | <img src="docs/images/transcoder.png" alt="Transcoder settings with hardware acceleration, tone mapping, and buffer controls" width="280"> |
 
 ## Run with Docker Compose
 
@@ -109,9 +113,32 @@ The monitor reads `/status/sessions` every 15 seconds while the page is visible,
 
 The Playing badge counts sessions from both sources. Plex sessions do not affect Silo node routing or job counts. If either playback source fails, the other remains visible with an outage notice; unavailable sessions are removed until the source recovers. Leave both variables blank to disable Plex. Protect the monitor behind your existing authenticated proxy because it exposes playback activity and posters.
 
+## Terminate playback
+
+In **Playing**, press the cross icon (**Select sessions to terminate**) to reveal selection circles. Select one or more Silo or Plex sessions, then press **Terminate (N)**. The request is sent immediately, with **no confirmation dialog**. Press the cross again or Escape to leave selection mode without stopping anything.
+
+Each selected session receives its own termination request. Cards show pending, requested, or failed status independently; failed selections remain available for retry. Accepted requests are not proof that playback has ended: the card remains until the session disappears from a subsequent refresh. If a request times out or cannot be confirmed, check playback before retrying. Sessions without a usable termination identifier cannot be selected.
+
+Silo termination uses its admin session-termination API; Plex uses its session-termination endpoint and the configured server-owner token. Server support and sufficient permissions are required. Credentials stay on the backend. Anyone with access to Siloscope can terminate playback, so restrict dashboard access to administrators through an authenticated reverse proxy.
+
 ## Transcoder settings
 
 Settings > Transcoder edits Silo's server-wide transcoding configuration: transcoding and 4K permissions, hardware acceleration, hardware/software HDR tone mapping, throttling and buffers, and playback execution/egress routing. Chapter settings, GPU device selection, and FFmpeg/transcode directory paths are excluded.
+
+| Control | Available values |
+| --- | --- |
+| Transcoding | Enabled or disabled |
+| Allow 4K transcoding | Enabled or disabled |
+| Hardware acceleration | Auto, Intel Quick Sync (QSV), VA-API, NVIDIA NVENC, VideoToolbox (macOS), or Software |
+| Hardware HDR tone mapping | Enabled or disabled |
+| Software HDR tone mapping | Enabled or disabled |
+| Throttle transcoding | Enabled or disabled |
+| Buffer ahead | Seconds, 0 or greater |
+| Back buffer | Seconds, either 0 or at least 120 |
+| Direct play, remux, and video transcode egress | Prefer proxy, Proxy only, Prefer API server, or API server only; configured separately for each playback method |
+| Remux and video transcode execution | Prefer worker, Worker only, Prefer API server, or API server only; configured separately for each playback method |
+
+Execution controls where processing runs; egress controls where playback is delivered from. Hardware modes depend on the capabilities of the Silo host or execution node. Silo validates changes and reports unsupported values.
 
 Toggles and dropdowns save automatically on change. Numeric fields save after a short typing pause or when committed, provided the value is valid. Rejected changes restore the previous value; unconfirmed saves require reloading settings before further edits. Display-preference resets never change Silo configuration. Restart notices come from Silo: saving is immediate, but settings marked as requiring a restart do not take effect until Silo is restarted. Saving never automatically restarts it. Missing fields are disabled rather than assigned guessed defaults. The Silo version must support the effective-settings, restart-keys, and batch settings APIs.
 
