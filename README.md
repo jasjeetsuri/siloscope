@@ -2,6 +2,8 @@
 
 A low-overhead, mobile-first wallboard for Silo CPU, memory, network bandwidth, disk usage, playback-node health, and active Silo and Plex playback sessions. A small Go server keeps API credentials out of the browser and retains five minutes of CPU, memory, download, and upload samples in memory so charts survive page reloads.
 
+Includes per-device display preferences, Silo transcoder controls, playback termination, and optional Web Push alerts for sustained CPU usage, disk usage, playback, and transcoding.
+
 ## Compatible with
 
 | Silo | Plex |
@@ -13,7 +15,7 @@ Logos identify compatible services; no affiliation or endorsement is implied. Se
 
 ## Screenshots
 
-Mobile views captured from the current UI using live server data and a read-only settings preview. No playback was terminated during capture.
+Mobile views captured using live server data and a read-only settings preview. Settings screenshots predate the latest grouped headings and notification controls. No playback was terminated during capture.
 
 | System | Playing |
 | --- | --- |
@@ -44,7 +46,7 @@ Use this same command for updates and after changing `.env`. It recreates the se
 
 The default local URL is `http://127.0.0.1:8091`. The health endpoint is `/healthz`. Host metrics require a Linux Docker host; process CPU usage becomes available after two samples, approximately 10 seconds after startup.
 
-The Silo admin resource and session routes are not covered by the currently available scoped API-key permissions. Treat the key as a secret: keep `.env` out of source control and do not put the key in Pangolin or browser configuration.
+The Silo admin resource and session routes are not covered by the currently available scoped API-key permissions. Treat the key as a secret: keep `.env` out of source control and use it only in Siloscope's server-side configuration, never in browser settings.
 
 ## Run with Portainer
 
@@ -91,12 +93,6 @@ volumes:
 
 Deploy the stack. For subsequent configuration changes, edit this same stack and its environment variables, then use **Update the stack** to apply them. All host-monitoring settings are included in this definition; no additional Compose files are needed for Portainer.
 
-## Pangolin
-
-When Newt runs on the Docker host, create a Pangolin HTTP resource targeting `http://127.0.0.1:8091`.
-
-When Newt runs in Docker, attach both containers to the same Docker network, remove the public `ports` mapping if it is not needed, and target `http://silo-monitor:8080` from Newt. Pangolin should terminate HTTPS for the public hostname.
-
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -122,7 +118,9 @@ Both installation methods above mount the selected host interface's byte counter
 
 ## Push notifications
 
-Disk alerts are opt-in under **Settings > Notifications > High disk usage**. The threshold slider defaults to 90% (range 75-100%) and applies to each disk shown by Silo. An alert is sent on the first fresh reading at or above the threshold, including when enabled while a disk is already full enough. Each disk alerts once until usage falls at least five percentage points below the threshold, then can alert again. This state survives restarts; changing the disk rule or threshold re-arms it. Missing, unavailable, or stale disk readings do not trigger or re-arm alerts. Disk checks reuse the existing background resource samples and work with the app closed, without extra polling.
+**Settings > Notifications** groups controls under **CPU Alerts**, **Disk Alerts**, and **Playback Alerts**. Enable/Disable notifications and Send test remain at the top. Sliders show their current values and are disabled when their alert is off; titles and usernames are an opt-in setting under Playback Alerts.
+
+Disk alerts are opt-in under **Settings > Notifications > Disk Alerts > High disk usage**. The threshold slider defaults to 90% (range 75-100%) and applies to each disk shown by Silo. An alert is sent on the first fresh reading at or above the threshold, including when enabled while a disk is already full enough. Each disk alerts once until usage falls at least five percentage points below the threshold, then can alert again. This state survives restarts; changing the disk rule or threshold re-arms it. Missing, unavailable, or stale disk readings do not trigger or re-arm alerts. Disk checks reuse the existing background resource samples and work with the app closed, without extra polling.
 
 Once notifications are enabled, preferences autosave on this device: toggles save immediately, and sliders save on release or keyboard adjustment. CPU sliders allow 70-100% usage, 5-15 minutes sustained, and a 10-60 minute cooldown. Values are displayed while dragging. Back navigation waits for an in-progress save; failed saves keep the editor open, restore the last confirmed values, and show an error. Existing API rules remain supported; saved values outside the slider ranges are clamped in the editor and applied on the next save.
 
@@ -158,6 +156,8 @@ Silo termination uses its admin session-termination API; Plex uses its session-t
 
 Settings > Transcoder edits Silo's server-wide transcoding configuration: transcoding and 4K permissions, hardware acceleration, hardware/software HDR tone mapping, throttling and buffers, and playback execution/egress routing. Chapter settings, GPU device selection, and FFmpeg/transcode directory paths are excluded.
 
+Controls are grouped under **Transcoding**, **Hardware**, **Tone Mapping**, **Buffering**, and **Routing**, with the same headings and dividers used across Settings.
+
 | Control | Available values |
 | --- | --- |
 | Transcoding | Enabled or disabled |
@@ -185,11 +185,21 @@ The banner's **Restart now** button requests a graceful Silo restart after confi
 
 Playback cards include video resolution (4K, 1080p, 720p, or 480p), audio codec labels such as DTS, DTS-HD MA, DD, DD+, and TrueHD, and Silo's confirmed SW/HW tone-mapping mode. Source and output are shown together when they differ. Missing details are omitted; tone mapping is never inferred from hardware video acceleration. Plex audio profiles come from the selected audio stream when available.
 
-The bottom-right Settings tab has separate System, Playing, and Nodes menus. Toggle sections and individual details, including the CPU process list, session metadata, node statistics, and tab badges. System also supports item reordering and graph height adjustment. Hidden content continues refreshing.
+The bottom-right Settings tab has separate System, Playing, and Nodes menus, organized into labelled groups:
 
-Preferences are saved in this browser on this device, not on the server. Reset tab restores one view; Reset all restores every display preference. When browser storage is unavailable, changes apply for the current page only.
+| Page | Groups |
+| --- | --- |
+| System | Layout, Graph Settings, Page Indicators, Disk Usage, CPU, Bandwidth, Memory |
+| Playing | Page Indicators, Session Appearance, Media Details, Playback Details |
+| Nodes | Page Indicators, Node Identity, Health & Activity, Resources |
 
-In Settings > System, Graph time window selects 2, 3, 4, or 5 minutes for the CPU, memory, and network graphs. The default is 5 minutes. The full five-minute history is retained when selecting a shorter window, and graphs with fewer samples show the available history until the selected duration is filled.
+Toggle whole panels or cards and individual details, including the CPU process list, session metadata, node statistics, and tab badges. Dependent controls are indented and disabled when their parent is hidden, without losing their saved selections. System's Layout group controls panel order; Graph Settings controls height and time window. Hidden content continues refreshing.
+
+Display preferences save immediately in this browser on this device, not on the server. Reset tab restores one view; Reset all restores every display preference. Neither reset changes notification rules or Silo's transcoder settings. When browser storage is unavailable, changes apply for the current page only.
+
+In **Settings > System > Graph Settings**, Time window selects 2, 3, 4, or 5 minutes for the CPU, memory, and network graphs. The default is 5 minutes. The full five-minute history is retained when selecting a shorter window, and graphs with fewer samples show the available history until the selected duration is filled. Height ranges from 100 to 220 pixels, with a default of 140 pixels.
+
+Each main tab remembers its scroll position while switching views. Content scrolls independently of the bottom navigation, including in the iPhone Home Screen app.
 
 ## Build locally
 
