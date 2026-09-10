@@ -43,8 +43,10 @@ window.TranscoderSettings = (() => {
       const restartKeys = new Set(data.restart_keys);
       for (const field of data.fields) {
         if (!groups.has(field.group)) {
-          const group = make("fieldset", "settings-fieldset");
-          group.append(make("legend", "", field.group));
+          const group = make("fieldset", "settings-fieldset settings-group");
+          const legend = make("legend", "");
+          legend.append(make("h4", "settings-group-heading", field.group));
+          group.append(legend);
           groups.set(field.group, group);
           form.append(group);
         }
@@ -156,7 +158,7 @@ window.TranscoderSettings = (() => {
       form.addEventListener("submit", event => { event.preventDefault(); persist(); });
       update();
       container.append(form);
-      status.textContent = "Silo server settings";
+      status.textContent = "";
     } catch (error) {
       if (current !== generation) return;
       status.textContent = error.message || "Unable to load transcoder settings";

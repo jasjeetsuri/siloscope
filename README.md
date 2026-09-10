@@ -61,12 +61,15 @@ services:
          SILO_API_KEY: ${SILO_API_KEY:?Set SILO_API_KEY}
          PLEX_URL: ${PLEX_URL:-}
          PLEX_TOKEN: ${PLEX_TOKEN:-}
+         PUSH_CONTACT: ${PUSH_CONTACT:-}
+         PUSH_DATA_DIR: /data/push
          HOST_PROC_DIR: /host/proc
          HOST_NETWORK_STATS_DIR: /host/network
          LISTEN_ADDR: :8080
          GOMAXPROCS: "1"
          GOMEMLIMIT: 32MiB
       volumes:
+         - notification-data:/data
          - /proc:/host/proc:ro
          - /sys/class/net/${HOST_NETWORK_INTERFACE:?Set HOST_NETWORK_INTERFACE}/statistics:/host/network:ro
       ports:
@@ -81,6 +84,9 @@ services:
       pids_limit: 32
       mem_limit: 48m
       cpus: 0.10
+
+volumes:
+   notification-data:
 ```
 
 Deploy the stack. For subsequent configuration changes, edit this same stack and its environment variables, then use **Update the stack** to apply them. All host-monitoring settings are included in this definition; no additional Compose files are needed for Portainer.
@@ -105,12 +111,30 @@ When Newt runs in Docker, attach both containers to the same Docker network, rem
 | `HOST_NETWORK_INTERFACE` | `eth0` | Host NIC used by the optional bandwidth override |
 | `HOST_NETWORK_STATS_DIR` | unset | Directory containing host NIC `rx_bytes` and `tx_bytes` counters |
 | `HOST_PROC_DIR` | unset | Read-only host `/proc` mount for the top CPU process list |
+| `PUSH_CONTACT` | unset | Enables Web Push when set to a real `mailto:` address or HTTPS contact URL |
+| `PUSH_DATA_DIR` | `/data/push` in Compose | Writable persistent directory for signing keys, subscriptions, rules, and alert state; required when push is enabled |
 
 The server samples resources every 5 seconds into a bounded in-memory history. The browser polls the current resource sample every 5 seconds and sessions every 15 seconds while visible. Resource responses are cached for 4 seconds and session responses for 10 seconds. Browser polling pauses when Mobile Safari backgrounds the tab; server history collection continues.
 
 The image is published for AMD64 and ARM64 at `ghcr.io/jasjeetsuri/silo-monitor:latest`.
 
 Both installation methods above mount the selected host interface's byte counters and host `/proc` read-only. Network graphs report total host ingress and egress, and the process list reports the three highest CPU consumers as a percentage of total host CPU capacity.
+
+## Push notifications
+
+Disk alerts are opt-in under **Settings > Notifications > High disk usage**. The threshold slider defaults to 90% (range 75-100%) and applies to each disk shown by Silo. An alert is sent on the first fresh reading at or above the threshold, including when enabled while a disk is already full enough. Each disk alerts once until usage falls at least five percentage points below the threshold, then can alert again. This state survives restarts; changing the disk rule or threshold re-arms it. Missing, unavailable, or stale disk readings do not trigger or re-arm alerts. Disk checks reuse the existing background resource samples and work with the app closed, without extra polling.
+
+Once notifications are enabled, preferences autosave on this device: toggles save immediately, and sliders save on release or keyboard adjustment. CPU sliders allow 70-100% usage, 5-15 minutes sustained, and a 10-60 minute cooldown. Values are displayed while dragging. Back navigation waits for an in-progress save; failed saves keep the editor open, restore the last confirmed values, and show an error. Existing API rules remain supported; saved values outside the slider ranges are clamped in the editor and applied on the next save.
+
+Push is optional and disabled until `PUSH_CONTACT` is set. Set it to your real contact address, for example `mailto:admin@your-domain.example`, and recreate the container with the updated Compose definition. A named volume at `/data` preserves the automatically generated VAPID signing keys and device subscriptions. With a bind mount instead, give UID 65532 write access to the directory. Do not expose this directory through the web server or commit its contents. Back it up securely; losing the keys requires devices to re-enable notifications.
+
+On iOS 16.4 or later, add the HTTPS site to the Home Screen, open that installed app, then choose **Settings > Notifications > Enable notifications** and grant permission. On supported desktop browsers, the same setting works over HTTPS (localhost also works for development). Use **Send test** to check delivery. Apple, Google/FCM, and Mozilla push endpoints are supported; outbound HTTPS access to those services is required. An authenticated reverse proxy is still required. Subscriptions must only be created by trusted administrators; same-origin checks are not authentication. Push can continue after a browser login expires until the device subscription is disabled or removed.
+
+Preferences are per device. CPU alerts default to 85% sustained for five minutes, a 30-minute repeat cooldown, and a recovery notification once CPU falls at least five percentage points below the threshold. CPU uses existing cached samples without another host scan. Missing or stale samples reset the sustained timer. Playback/transcode alerts are off by default. Enabling either starts a shared server-side session poll every ten seconds for Silo and configured Plex, using the same caches as browser requests. They continue with the app closed; no extra session polls run when no devices enable these events.
+
+The first successful session poll after startup, a long polling gap, or a preference change establishes a baseline without sending alerts for existing streams. Subsequent new sessions and transitions to transcoding notify once per observed transition. A new transcoding session can produce both notifications when both rules are enabled. Events of each type in one poll are grouped per source. Titles and usernames are hidden by default and can be enabled per device. CPU cooldown and subscription state survive restarts; the sustained CPU timer restarts because CPU activity during downtime is unknown.
+
+Delivery is best-effort: Focus modes, connectivity, browser restrictions, or push-service errors may delay or prevent alerts. Sessions shorter than the polling interval can be missed. A bounded in-memory queue and one delivery worker limit resource usage; queued notifications are not retried or replayed after a restart, and a full queue drops events. Expired subscriptions are removed after HTTP 404/410 responses. There is a limit of 32 devices, and test notifications are limited to one per device per minute. The service worker handles push/click events only and does not cache pages, credentials, or API responses. No new process scans are added; enabling playback alerts does add upstream HTTP polling while no browser is open.
 
 ## Plex playback
 

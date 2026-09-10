@@ -74,14 +74,24 @@ html {
 }
 
 body {
-  min-height: 100vh;
-  min-height: 100dvh;
+  --tab-bottom-padding: max(7px, env(safe-area-inset-bottom));
+  --tab-bar-height: calc(60px + var(--tab-bottom-padding));
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
   margin: 0;
   color: var(--text);
   background-color: var(--background);
   background-image: linear-gradient(180deg, rgb(238 139 157 / 0.015), transparent 360px);
   letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
+}
+
+body::after {
+  content: "";
+  height: var(--tab-bar-height);
 }
 
 button,
@@ -239,8 +249,11 @@ h1 {
 
 .page-shell {
   width: min(100%, 1180px);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   margin: 0 auto;
-  padding: 24px max(16px, env(safe-area-inset-right)) calc(108px + env(safe-area-inset-bottom))
+  padding: 24px max(16px, env(safe-area-inset-right)) 24px
     max(16px, env(safe-area-inset-left));
 }
 
@@ -250,7 +263,8 @@ h1 {
   right: 0;
   bottom: 0;
   left: 0;
-  padding: 7px max(12px, env(safe-area-inset-right)) max(7px, env(safe-area-inset-bottom))
+  height: var(--tab-bar-height);
+  padding: 7px max(12px, env(safe-area-inset-right)) var(--tab-bottom-padding)
     max(12px, env(safe-area-inset-left));
   border-top: 1px solid rgb(255 255 255 / 0.08);
   background: rgb(16 12 14 / 0.94);
@@ -258,17 +272,33 @@ h1 {
   backdrop-filter: blur(20px) saturate(150%);
 }
 
-.standalone .bottom-tabs {
-  padding-bottom: 12px;
+.standalone body {
+  --tab-bottom-padding: 12px;
 }
 
 @media (max-width: 759px) {
-  .bottom-tabs {
-    padding-bottom: calc(max(7px, env(safe-area-inset-bottom)) + 4px);
+  body {
+    --tab-bottom-padding: calc(max(7px, env(safe-area-inset-bottom)) + 4px);
+  }
+
+  .standalone body {
+    --tab-bottom-padding: 16px;
+  }
+}
+
+.settings-status:empty {
+  display: none;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .standalone body {
+    position: relative;
+    height: 100vh;
+    height: 100lvh;
   }
 
   .standalone .bottom-tabs {
-    padding-bottom: 16px;
+    position: absolute;
   }
 }
 
@@ -309,6 +339,18 @@ h1 {
 .settings-editor-heading h3 { margin: 0; font-size: 18px; }
 .settings-command { margin-left: auto; padding: 10px 0 10px 12px; border: 0; background: transparent; color: var(--primary); cursor: pointer; font-size: 13px; }
 .settings-fieldset { min-width: 0; margin: 0 0 24px; padding: 0; border: 0; }
+.notification-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.notification-settings button { min-height: 44px; }
+.notification-group, .settings-group { padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.notification-group:last-child, .settings-group:last-child { padding-bottom: 0; border-bottom: 0; }
+.notification-heading, .settings-group-heading { margin: 0; color: var(--text); font-size: 14px; font-weight: 700; }
+.notification-group .settings-height { margin: 12px 0 16px 20px; grid-template-columns: minmax(0, 1fr) auto; }
+.notification-group .settings-height:has(input:disabled) { opacity: 0.45; }
+.notification-group .settings-toggle:last-child, .settings-group .settings-toggle:last-child { border-bottom: 0; }
+.settings-group .transcoder-field:last-child, .settings-group .settings-order-row:last-child { border-bottom: 0; }
+.settings-group .settings-height { margin-top: 12px; grid-template-columns: minmax(0, 1fr) auto; }
+.settings-group .settings-duration { flex-wrap: wrap; }
+.settings-group .settings-duration:last-child { margin-bottom: 0; }
 .settings-fieldset legend { padding: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .settings-order-row { display: grid; grid-template-columns: minmax(0, 1fr) 44px 44px; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .settings-order-row .icon-button { width: 44px; height: 44px; }
@@ -1224,7 +1266,7 @@ h2 {
   }
 
   .page-shell {
-    padding: 32px 28px calc(108px + env(safe-area-inset-bottom));
+    padding: 32px 28px;
   }
 
   .metric-grid,

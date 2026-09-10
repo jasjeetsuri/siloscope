@@ -8,11 +8,15 @@ services:
       SILO_API_KEY: ${SILO_API_KEY:?Set SILO_API_KEY in .env}
       PLEX_URL: ${PLEX_URL:-}
       PLEX_TOKEN: ${PLEX_TOKEN:-}
+      PUSH_CONTACT: ${PUSH_CONTACT:-}
+      PUSH_DATA_DIR: /data/push
       LISTEN_ADDR: :8080
       GOMAXPROCS: "1"
       GOMEMLIMIT: 32MiB
     ports:
       - "${MONITOR_BIND:-127.0.0.1}:${MONITOR_PORT:-8091}:8080"
+    volumes:
+      - notification-data:/data
     read_only: true
     tmpfs:
       - /tmp:size=1m,mode=1777
@@ -23,3 +27,6 @@ services:
     pids_limit: 32
     mem_limit: 48m
     cpus: 0.10
+
+volumes:
+  notification-data:

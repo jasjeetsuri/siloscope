@@ -15,12 +15,41 @@
   let visibilityRuleCount = 0;
   const panels = Object.fromEntries(model.systemOrder.map(key => [key, document.querySelector(model.groups.system.options.find(option => option[0] === key)[2])]));
   const grid = document.querySelector(".metric-grid");
+  const sections = {
+    system: [
+      ["Page Indicators", ["heading", "status"]],
+      ["Disk Usage", ["disk", "disk.heading", "disk.values", "disk.bars"]],
+      ["CPU", ["cpu", "cpu.heading", "cpu.value", "cpu.detail", "cpu.chart", "cpu.scale", "cpu.time", "cpu.processes"]],
+      ["Bandwidth", ["network", "network.heading", "network.download", "network.upload", "network.detail", "network.chart", "network.scale", "network.time"]],
+      ["Memory", ["memory", "memory.value", "memory.detail", "memory.chart", "memory.scale", "memory.time"]],
+    ],
+    playing: [
+      ["Page Indicators", ["heading", "count", "badge"]],
+      ["Session Appearance", ["cards", "posters", "title"]],
+      ["Media Details", ["subtitle", "resolution", "tonemap", "audio"]],
+      ["Playback Details", ["source", "method", "client", "node", "profile", "progress", "user", "time"]],
+    ],
+    infrastructure: [
+      ["Page Indicators", ["heading", "summary", "badge"]],
+      ["Node Identity", ["cards", "name", "role"]],
+      ["Health & Activity", ["health", "routes", "jobs", "checked"]],
+      ["Resources", ["egress", "accelerator", "resources"]],
+    ],
+  };
 
   function make(tag, className, text) {
     const node = document.createElement(tag);
     node.className = className;
     if (text !== undefined) node.textContent = text;
     return node;
+  }
+
+  function makeSection(title) {
+    const fields = make("fieldset", "settings-fieldset settings-group");
+    const legend = make("legend", "");
+    legend.append(make("h4", "settings-group-heading", title));
+    fields.append(legend);
+    return fields;
   }
 
   function apply() {
@@ -60,8 +89,7 @@
     options.replaceChildren();
     const definition = model.groups[activeGroup];
     if (activeGroup === "system") {
-      const order = make("fieldset", "settings-fieldset");
-      order.append(make("legend", "", "Item order"));
+      const order = makeSection("Layout");
       preferences.systemOrder.forEach((key, index) => {
         const label = definition.options.find(option => option[0] === key)[1];
         const row = make("div", "settings-order-row");
@@ -84,6 +112,7 @@
         order.append(row);
       });
       options.append(order);
+      const graphs = makeSection("Graph Settings");
       const heightLabel = make("label", "settings-height");
       const height = make("input", "");
       height.type = "range";
@@ -98,8 +127,8 @@
         output.textContent = `${height.value}px`;
         commit();
       });
-      heightLabel.append(make("span", "", "Graph height"), output, height);
-      options.append(heightLabel);
+      heightLabel.append(make("span", "", "Height"), output, height);
+      graphs.append(heightLabel);
       const durationLabel = make("label", "settings-duration");
       const duration = make("select", "");
       duration.setAttribute("aria-label", "Graph time window");
@@ -113,31 +142,38 @@
         preferences.chartMinutes = Number(duration.value);
         commit();
       });
-      durationLabel.append(make("span", "", "Graph time window"), duration);
-      options.append(durationLabel);
+      durationLabel.append(make("span", "", "Time window"), duration);
+      graphs.append(durationLabel);
+      options.append(graphs);
     }
-    const fields = make("fieldset", "settings-fieldset");
-    fields.append(make("legend", "", "Visibility"));
-    for (const [key, label, , parent] of definition.options) {
-      const row = make("label", `settings-toggle${parent ? " settings-child" : ""}`);
-      const input = make("input", "");
-      input.type = "checkbox";
-      input.dataset.key = key;
-      input.checked = preferences.visibility[`${activeGroup}.${key}`];
-      input.addEventListener("change", () => {
-        preferences.visibility[`${activeGroup}.${key}`] = input.checked;
-        commit();
-        updateDisabled();
-      });
-      row.append(make("span", "", label), input);
-      fields.append(row);
+    for (const [title, keys] of sections[activeGroup]) {
+      const fields = makeSection(title);
+      for (const key of keys) {
+        const [, label, , parent] = definition.options.find(option => option[0] === key);
+        const row = make("label", `settings-toggle${parent ? " settings-child" : ""}`);
+        const input = make("input", "");
+        input.type = "checkbox";
+        input.dataset.key = key;
+        input.checked = preferences.visibility[`${activeGroup}.${key}`];
+        input.addEventListener("change", () => {
+          preferences.visibility[`${activeGroup}.${key}`] = input.checked;
+          commit();
+          updateDisabled();
+        });
+        const displayLabel = key === "heading" ? "Page heading"
+          : key === "cards" ? `Show ${activeGroup === "playing" ? "session" : "node"} cards`
+          : ["disk", "cpu", "network", "memory"].includes(key) ? "Show panel"
+          : key === "cpu.processes" ? "Top processes" : label;
+        row.append(make("span", "", displayLabel), input);
+        fields.append(row);
+      }
+      options.append(fields);
     }
-    options.append(fields);
     updateDisabled();
     if (focusKey) options.querySelector(`[data-order="${focusKey}"]`)?.focus();
   }
 
-  for (const [key, definition] of Object.entries({ ...model.groups, transcoder: { label: "Transcoder" } })) {
+  for (const [key, definition] of Object.entries({ ...model.groups, transcoder: { label: "Transcoder" }, notifications: { label: "Notifications" } })) {
     const button = make("button", "settings-menu-item");
     button.type = "button";
     const arrow = make("span", "", "\u203a");
@@ -150,15 +186,21 @@
       editor.hidden = false;
       const heading = document.getElementById("settings-group-heading");
       heading.textContent = definition.label;
-      document.getElementById("reset-tab-settings").hidden = key === "transcoder";
-      document.getElementById("reset-settings").hidden = key === "transcoder";
+      document.getElementById("reset-tab-settings").hidden = key === "transcoder" || key === "notifications";
+      document.getElementById("reset-settings").hidden = key === "transcoder" || key === "notifications";
       if (key === "transcoder") TranscoderSettings.open(options, status);
+      else if (key === "notifications") NotificationSettings.open(options, status);
       else renderOptions();
       heading.focus();
     });
     menu.append(button);
   }
-  document.getElementById("settings-back").addEventListener("click", () => {
+  document.getElementById("settings-back").addEventListener("click", async () => {
+    if (activeGroup === "notifications") {
+      if (!await NotificationSettings.canLeave() || activeGroup !== "notifications") return;
+      NotificationSettings.leave();
+      status.textContent = "";
+    }
     if (activeGroup === "transcoder") {
       if (!TranscoderSettings.canLeave()) return;
       TranscoderSettings.leave();
@@ -173,10 +215,10 @@
   document.getElementById("reset-settings").addEventListener("click", () => {
     preferences = model.normalize(null);
     commit();
-    if (activeGroup && activeGroup !== "transcoder") renderOptions();
+    if (activeGroup && activeGroup !== "transcoder" && activeGroup !== "notifications") renderOptions();
   });
   document.getElementById("reset-tab-settings").addEventListener("click", () => {
-    if (!activeGroup || activeGroup === "transcoder") return;
+    if (!activeGroup || activeGroup === "transcoder" || activeGroup === "notifications") return;
     for (const [key] of model.groups[activeGroup].options) preferences.visibility[`${activeGroup}.${key}`] = true;
     if (activeGroup === "system") {
       preferences.systemOrder = [...model.systemOrder];
@@ -190,7 +232,7 @@
     if (event.key !== model.storageKey && event.key !== null) return;
     preferences = model.load(storage);
     apply();
-    if (activeGroup && activeGroup !== "transcoder") renderOptions();
+    if (activeGroup && activeGroup !== "transcoder" && activeGroup !== "notifications") renderOptions();
   });
   apply();
 })();

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -210,36 +211,39 @@ func normalizePlexSession(metadata plexMetadata) plexPlayback {
 func (app *application) plexSessionsJSON(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.Header().Set("Content-Type", "application/json")
-	if app.config.plexURL == nil {
-		_, _ = io.WriteString(writer, `{"enabled":false,"sessions":[]}`)
+	body, err := app.plexSessionData(request.Context())
+	if err != nil {
+		writeJSONError(writer, http.StatusBadGateway, "Plex is unavailable")
 		return
+	}
+	_, _ = writer.Write(body)
+}
+
+func (app *application) plexSessionData(ctx context.Context) ([]byte, error) {
+	if app.config.plexURL == nil {
+		return []byte(`{"enabled":false,"sessions":[]}`), nil
 	}
 	app.cache.mu.Lock()
 	cached, exists := app.cache.entries["plex-sessions"]
 	app.cache.mu.Unlock()
 	if exists && time.Now().Before(cached.expiresAt) {
-		_, _ = writer.Write(cached.body)
-		return
+		return cached.body, nil
 	}
-	response, err := app.plexGet(request.Context(), "/status/sessions", "application/xml")
+	response, err := app.plexGet(ctx, "/status/sessions", "application/xml")
 	if err != nil {
-		writeJSONError(writer, http.StatusBadGateway, "Plex is unavailable")
-		return
+		return nil, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		writeJSONError(writer, http.StatusBadGateway, "Plex is unavailable")
-		return
+		return nil, fmt.Errorf("Plex returned %d", response.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil || len(body) > maxResponseBytes {
-		writeJSONError(writer, http.StatusBadGateway, "Plex response is invalid")
-		return
+		return nil, errors.New("invalid Plex response size")
 	}
 	var container plexMediaContainer
 	if err := xml.Unmarshal(body, &container); err != nil {
-		writeJSONError(writer, http.StatusBadGateway, "Plex response is invalid")
-		return
+		return nil, err
 	}
 	sessions := make([]plexPlayback, 0, len(container.Videos)+len(container.Tracks))
 	for _, metadata := range append(container.Videos, container.Tracks...) {
@@ -252,13 +256,12 @@ func (app *application) plexSessionsJSON(writer http.ResponseWriter, request *ht
 		Sessions []plexPlayback `json:"sessions"`
 	}{true, sessions})
 	if err != nil {
-		writeJSONError(writer, http.StatusBadGateway, "Plex response is invalid")
-		return
+		return nil, err
 	}
 	app.cache.mu.Lock()
 	app.cache.entries["plex-sessions"] = cacheEntry{body: body, expiresAt: time.Now().Add(app.config.cacheTTL)}
 	app.cache.mu.Unlock()
-	_, _ = writer.Write(body)
+	return body, nil
 }
 
 func (app *application) plexPoster(writer http.ResponseWriter, request *http.Request) {

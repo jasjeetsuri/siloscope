@@ -85,12 +85,13 @@ type hostNetworkSampler struct {
 }
 
 type application struct {
-	config    config
-	client    *http.Client
-	cache     proxyCache
-	history   resourceHistory
-	network   *hostNetworkSampler
-	processes *processSampler
+	config        config
+	client        *http.Client
+	cache         proxyCache
+	history       resourceHistory
+	network       *hostNetworkSampler
+	processes     *processSampler
+	notifications *notificationService
 }
 
 func main() {
@@ -100,6 +101,20 @@ func main() {
 	}
 
 	app := newApplication(cfg)
+	if contact := strings.TrimSpace(os.Getenv("PUSH_CONTACT")); contact != "" {
+		contactURL, err := url.Parse(contact)
+		if err != nil || (contactURL.Scheme != "mailto" && contactURL.Scheme != "https") || (contactURL.Scheme == "mailto" && !strings.Contains(contactURL.Opaque, "@")) || (contactURL.Scheme == "https" && contactURL.Host == "") {
+			log.Fatal("PUSH_CONTACT must be a mailto address or HTTPS contact URL")
+		}
+		directory := strings.TrimSpace(os.Getenv("PUSH_DATA_DIR"))
+		if directory == "" {
+			log.Fatal("PUSH_DATA_DIR is required when PUSH_CONTACT is set")
+		}
+		app.notifications, err = newNotificationService(directory, contact)
+		if err != nil {
+			log.Fatal("notification storage could not be initialized: ", err)
+		}
+	}
 	server := &http.Server{
 		Addr:              cfg.address,
 		Handler:           app.routes(),
@@ -112,6 +127,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go app.sampleResources(ctx)
+	if app.notifications != nil {
+		go app.runNotifications(ctx)
+	}
 
 	go func() {
 		<-ctx.Done()
@@ -201,6 +219,8 @@ func (a *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/resources", a.proxyJSON("resources", "/api/v1/admin/system/resources", resourceCacheTTL))
 	mux.HandleFunc("GET /api/history", a.resourceHistoryJSON)
 	mux.HandleFunc("GET /api/processes", a.processCPUJSON)
+	mux.HandleFunc("GET /api/notifications", a.notificationsJSON)
+	mux.HandleFunc("POST /api/notifications", a.notificationsJSON)
 	mux.HandleFunc("GET /api/sessions", a.proxyJSON("sessions", "/api/v1/admin/sessions", a.config.cacheTTL))
 	mux.HandleFunc("GET /api/plex/sessions", a.plexSessionsJSON)
 	mux.HandleFunc("GET /api/plex/poster", a.plexPoster)
@@ -245,15 +265,21 @@ func (a *application) captureResourceSample(ctx context.Context) {
 		Available bool   `json:"available"`
 		SampledAt string `json:"sampled_at"`
 		System    *struct {
-			CPU         *float64 `json:"cpu_pct"`
-			MemoryUsed  *float64 `json:"mem_used_mb"`
-			MemoryTotal *float64 `json:"mem_total_mb"`
-			Download    *float64 `json:"net_rx_bps"`
-			Upload      *float64 `json:"net_tx_bps"`
+			Disks       []notificationDisk `json:"disks"`
+			CPU         *float64           `json:"cpu_pct"`
+			MemoryUsed  *float64           `json:"mem_used_mb"`
+			MemoryTotal *float64           `json:"mem_total_mb"`
+			Download    *float64           `json:"net_rx_bps"`
+			Upload      *float64           `json:"net_tx_bps"`
 		} `json:"system"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil || !payload.Available || payload.System == nil {
 		return
+	}
+	if a.notifications != nil {
+		if sampledAt, err := time.Parse(time.RFC3339, payload.SampledAt); err == nil {
+			a.notifications.observeDisks(payload.System.Disks, sampledAt, time.Now())
+		}
 	}
 
 	timestamp := time.Now()

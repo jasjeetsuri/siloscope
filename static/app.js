@@ -74,7 +74,8 @@ function setConnection(kind, label) {
 
 function setView(view) {
   if (!Object.hasOwn(state.viewScroll, view)) return;
-  state.viewScroll[state.view] = window.scrollY;
+  const scrollPane = document.querySelector(".page-shell");
+  state.viewScroll[state.view] = scrollPane.scrollTop;
   state.view = view;
   for (const section of elements.viewSections) section.hidden = section.dataset.view !== view;
   window.dispatchEvent(new Event("monitor-view-change"));
@@ -84,7 +85,7 @@ function setView(view) {
     button.setAttribute("aria-selected", String(selected));
   }
   window.requestAnimationFrame(() => {
-    window.scrollTo(0, state.viewScroll[view]);
+    scrollPane.scrollTo(0, state.viewScroll[view]);
     redrawCharts();
   });
 }

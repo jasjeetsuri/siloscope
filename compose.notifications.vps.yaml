@@ -1,0 +1,10 @@
+services:
+  silo-perf-monitor:
+    environment:
+      PUSH_CONTACT: https://github.com/jasjeetsuri/siloscope
+      PUSH_DATA_DIR: /data/push
+    volumes:
+      - notification-data:/data
+
+volumes:
+  notification-data:
