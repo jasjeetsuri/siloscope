@@ -3,7 +3,7 @@ FROM golang:1.24-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY main.go processes.go plex.go transcoder.go notifications.go notification_alerts.go ./
+COPY main.go processes.go plex.go transcoder.go notifications.go notification_alerts.go activity.go service_alerts.go ./
 COPY static ./static
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/silo-monitor .
 RUN mkdir -p /out/data
@@ -17,5 +17,6 @@ COPY --from=build /out/silo-monitor /silo-monitor
 COPY --from=build --chown=65532:65532 /out/data /data
 
 USER 65532:65532
+ENV ACTIVITY_DATA_DIR=/data/activity
 EXPOSE 8080
 ENTRYPOINT ["/silo-monitor"]

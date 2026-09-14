@@ -16,17 +16,21 @@ import (
 )
 
 type notificationSession struct {
-	ID        json.RawMessage `json:"id"`
-	SessionID string          `json:"session_id"`
-	Title     string          `json:"media_title"`
-	MediaType string          `json:"media_type"`
-	Series    string          `json:"series_name"`
-	Username  string          `json:"username"`
-	Profile   string          `json:"profile_name"`
-	Method    string          `json:"play_method"`
-	Effective string          `json:"effective_play_method"`
-	Video     string          `json:"video_decision"`
-	Audio     string          `json:"audio_decision"`
+	Poster      string          `json:"poster_url"`
+	Season      *int            `json:"season_number"`
+	Episode     *int            `json:"episode_number"`
+	EpisodeName string          `json:"episode_name"`
+	ID          json.RawMessage `json:"id"`
+	SessionID   string          `json:"session_id"`
+	Title       string          `json:"media_title"`
+	MediaType   string          `json:"media_type"`
+	Series      string          `json:"series_name"`
+	Username    string          `json:"username"`
+	Profile     string          `json:"profile_name"`
+	Method      string          `json:"play_method"`
+	Effective   string          `json:"effective_play_method"`
+	Video       string          `json:"video_decision"`
+	Audio       string          `json:"audio_decision"`
 }
 
 func (session notificationSession) key() string {
@@ -85,6 +89,7 @@ func (session notificationSession) notificationDetail(source string) string {
 }
 
 type notificationDisk struct {
+	Stale       bool     `json:"stale"`
 	Path        string   `json:"path"`
 	Role        string   `json:"role"`
 	Scratch     bool     `json:"scratch"`
@@ -101,7 +106,7 @@ func (service *notificationService) observeDisks(disks []notificationDisk, sampl
 	defer service.mu.Unlock()
 	changed := false
 	for _, disk := range disks {
-		if disk.Unavailable || disk.Used == nil || disk.Total == nil || *disk.Total <= 0 || *disk.Used < 0 || *disk.Used > *disk.Total || math.IsNaN(*disk.Used) || math.IsNaN(*disk.Total) || math.IsInf(*disk.Used, 0) || math.IsInf(*disk.Total, 0) {
+		if disk.Stale || disk.Unavailable || disk.Used == nil || disk.Total == nil || *disk.Total <= 0 || *disk.Used < 0 || *disk.Used > *disk.Total || math.IsNaN(*disk.Used) || math.IsNaN(*disk.Total) || math.IsInf(*disk.Used, 0) || math.IsInf(*disk.Total, 0) {
 			continue
 		}
 		key := disk.Path
@@ -263,7 +268,6 @@ func (app *application) runNotifications(ctx context.Context) {
 	go service.deliver(ctx)
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	var lastPlayback time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -276,30 +280,6 @@ func (app *application) runNotifications(ctx context.Context) {
 			}
 			app.history.mu.RUnlock()
 			service.observeCPU(sample, now)
-			service.mu.Lock()
-			playback := false
-			for _, device := range service.store.Devices {
-				playback = playback || device.Rules.Playback || device.Rules.Transcode
-			}
-			service.mu.Unlock()
-			if !playback || now.Sub(lastPlayback) < 10*time.Second {
-				continue
-			}
-			lastPlayback = now
-			body, _, err := app.fetch(ctx, "sessions", "/api/v1/admin/sessions", app.config.cacheTTL)
-			var sessions []notificationSession
-			if err == nil && json.Unmarshal(body, &sessions) == nil && sessions != nil {
-				service.observeSessions("Silo", sessions, now)
-			}
-			if app.config.plexURL != nil {
-				body, err = app.plexSessionData(ctx)
-				var payload struct {
-					Sessions []notificationSession `json:"sessions"`
-				}
-				if err == nil && json.Unmarshal(body, &payload) == nil && payload.Sessions != nil {
-					service.observeSessions("Plex", payload.Sessions, now)
-				}
-			}
 		}
 	}
 }
@@ -321,7 +301,7 @@ func (service *notificationService) deliver(ctx context.Context) {
 			service.mu.Unlock()
 			body, _ := json.Marshal(delivery.Message)
 			response, err := webpush.SendNotificationWithContext(ctx, body, &subscription, &webpush.Options{
-				Subscriber: service.contact, VAPIDPrivateKey: privateKey, VAPIDPublicKey: publicKey,
+				Subscriber: strings.TrimPrefix(service.contact, "mailto:"), VAPIDPrivateKey: privateKey, VAPIDPublicKey: publicKey,
 				TTL: 300, HTTPClient: service.client, Urgency: webpush.UrgencyNormal,
 			})
 			if err != nil {
@@ -336,6 +316,8 @@ func (service *notificationService) deliver(ctx context.Context) {
 				service.mu.Unlock()
 			} else if response.StatusCode < 200 || response.StatusCode >= 300 {
 				log.Printf("push service returned HTTP %d", response.StatusCode)
+			} else if delivery.Message.Tag == "test" {
+				log.Printf("push test notification accepted by service (HTTP %d)", response.StatusCode)
 			}
 		}
 	}

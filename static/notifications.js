@@ -78,7 +78,7 @@ const NotificationSettings = (() => {
       actions.append(enable, disable, test);
       const inputs = {};
       const outputs = {};
-      const headings = { cpu: "CPU Alerts", disk: "Disk Alerts", playback: "Playback Alerts" };
+      const headings = { cpu: "CPU Alerts", disk: "Disk Alerts", playback: "Playback Alerts", service_down: "Service Alerts" };
       let fields;
       form.append(actions);
       for (const [key, label, type, minimum, maximum] of [
@@ -92,6 +92,7 @@ const NotificationSettings = (() => {
         ["playback", "Playback started", "checkbox"],
         ["transcode", "Transcoding started", "checkbox"],
         ["details", "Include titles and usernames", "checkbox"],
+        ["service_down", "Service outages and recovery", "checkbox"],
       ]) {
         if (headings[key]) {
           fields = node("fieldset", "settings-fieldset notification-group");

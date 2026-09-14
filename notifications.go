@@ -20,6 +20,7 @@ import (
 )
 
 type notificationRules struct {
+	ServiceDown   bool `json:"service_down"`
 	Disk          bool `json:"disk"`
 	DiskThreshold int  `json:"disk_threshold"`
 	CPU           bool `json:"cpu"`
@@ -41,6 +42,7 @@ func (rules notificationRules) valid() bool {
 }
 
 type notificationDevice struct {
+	Outages      map[string]*serviceOutage  `json:"outages,omitempty"`
 	DiskActive   map[string]bool            `json:"disk_active,omitempty"`
 	Subscription webpush.Subscription       `json:"subscription"`
 	Rules        notificationRules          `json:"rules"`
@@ -240,6 +242,9 @@ func (app *application) notificationsJSON(writer http.ResponseWriter, request *h
 		}
 		if device.Rules.Disk != input.Rules.Disk || device.Rules.DiskThreshold != input.Rules.DiskThreshold {
 			device.DiskActive = nil
+		}
+		if device.Rules.ServiceDown != input.Rules.ServiceDown {
+			device.Outages = nil
 		}
 		if device.Rules != *input.Rules {
 			device.HighSince = time.Time{}

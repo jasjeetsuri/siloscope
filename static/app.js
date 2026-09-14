@@ -27,8 +27,10 @@ const state = {
   plexOK: null,
   nodesOK: null,
   lastSuccessAt: null,
+  freshness: {},
+  freshnessTimer: null,
   view: "system",
-  viewScroll: { system: 0, infrastructure: 0, playing: 0, settings: 0 },
+  viewScroll: { system: 0, infrastructure: 0, playing: 0, history: 0, settings: 0 },
 };
 
 const chartViews = new Map();
@@ -69,7 +71,8 @@ function setConnection(kind, label) {
   if (!elements.connection) return;
   const live = kind === "live";
   elements.connection.className = `live-indicator status-${live ? "live" : "offline"}`;
-  elements.connection.setAttribute("aria-label", live ? "Live" : "Disconnected");
+  elements.connection.setAttribute("aria-label", label);
+  elements.connection.title = label;
 }
 
 function setView(view) {
@@ -80,7 +83,7 @@ function setView(view) {
   for (const section of elements.viewSections) section.hidden = section.dataset.view !== view;
   window.dispatchEvent(new Event("monitor-view-change"));
   for (const button of elements.tabButtons) {
-    const selected = button.dataset.tab === view;
+    const selected = button.dataset.tab === (view === "history" ? "playing" : view);
     button.classList.toggle("active", selected);
     button.setAttribute("aria-selected", String(selected));
   }
@@ -506,7 +509,7 @@ function setLiveReadout(svg, value, detail) {
 function showDisks(disks) {
   elements.diskList.replaceChildren();
   const available = Array.isArray(disks)
-    ? disks.filter((disk) => !disk.unavailable && Number(disk.total_gb) > 0)
+    ? disks.filter((disk) => !disk.unavailable && Number.isFinite(disk.total_gb) && disk.total_gb > 0 && Number.isFinite(disk.used_gb) && disk.used_gb >= 0 && disk.used_gb <= disk.total_gb)
     : [];
   if (available.length === 0) {
     elements.diskList.append(elementWithClass("p", "disk-empty", "Disk metrics unavailable"));
@@ -522,15 +525,25 @@ function showDisks(disks) {
     const label = disk.scratch ? "System disk" : humanize(disk.role || "Media disk");
     const name = elementWithClass("span", "disk-name", label);
     if (disk.path) name.title = disk.path;
-    summary.append(
-      name,
-      elementWithClass("span", "disk-value", `${Math.round(percent)}% · ${used.toFixed(1)} of ${total.toFixed(1)} GiB`),
-    );
+    row.classList.toggle("stale-data", disk.stale === true);
     const track = elementWithClass("div", "disk-track");
     const fill = elementWithClass("div", `disk-fill${percent >= 90 ? " disk-danger" : percent >= 80 ? " disk-warning" : ""}`);
     fill.style.width = `${percent}%`;
     track.append(fill);
-    row.append(summary, track);
+    summary.append(
+      name,
+      track,
+      elementWithClass("span", "disk-value", `${Math.round(percent)}% used · ${used.toFixed(1)} of ${total.toFixed(1)} GiB${disk.stale ? " · Stale" : ""}`),
+    );
+    const free = elementWithClass("div", "disk-free");
+    const amount = elementWithClass("div", "disk-free-amount");
+    amount.append(
+      elementWithClass("strong", "disk-free-number", (total - used).toFixed(1)),
+      elementWithClass("span", "disk-free-unit", "GiB"),
+    );
+    free.setAttribute("aria-label", `${(total - used).toFixed(1)} GiB free${disk.stale ? ", stale data" : ""}`);
+    free.append(amount, elementWithClass("span", "disk-free-label", "free"));
+    row.append(summary, free);
     elements.diskList.append(row);
   }
 }
@@ -611,16 +624,17 @@ function humanize(value) {
 function sessionTitle(session) {
   const isEpisode = session.series_name && session.season_number != null && session.episode_number != null;
   if (isEpisode) {
-    return session.episode_name || `S${session.season_number}E${session.episode_number}`;
+    return session.series_name;
   }
   return session.media_title || "Unknown title";
 }
 
 function sessionSubtitle(session) {
-  if (session.subtitle) return session.subtitle;
   if (session.series_name && session.season_number != null && session.episode_number != null) {
-    return `S${session.season_number} · E${session.episode_number} — ${session.series_name}`;
+    const episodeName = session.episode_name || (session.media_title !== session.series_name ? session.media_title : "");
+    return [`S${session.season_number} · E${session.episode_number}`, episodeName].filter(Boolean).join(" — ");
   }
+  if (session.subtitle) return session.subtitle;
   return humanize(session.media_type || "Media");
 }
 
@@ -798,6 +812,7 @@ function selectablePlaybackCard(card, session) {
 
 function createSessionCard(session) {
   const card = elementWithClass("article", `session-card${session.is_paused ? " paused" : ""}`);
+  card.dataset.source = session.source || "silo";
   const poster = elementWithClass("div", "poster");
   if (session.poster_url) {
     const image = document.createElement("img");
@@ -940,12 +955,15 @@ function nodeResourceSummary(node) {
 
 function nodeStatus(node) {
   if (!node.enabled) return { label: "Disabled", className: "node-disabled" };
+  const checked = Date.parse(node.last_health_check);
+  if (!Number.isFinite(checked) || Date.now() - checked > 45_000 || checked > Date.now() + 5_000 || typeof node.healthy !== "boolean") return { label: "Unknown", className: "node-disabled" };
   if (!node.healthy) return { label: "Unhealthy", className: "node-unhealthy" };
   return { label: "Healthy", className: "node-healthy" };
 }
 
 function createNodeCard(node) {
   const card = elementWithClass("article", "node-card");
+  card.dataset.nodeId = String(node.id);
   const header = elementWithClass("div", "node-header");
   const identity = elementWithClass("div", "node-identity");
   identity.append(
@@ -993,7 +1011,7 @@ function renderNodes() {
     (left, right) => String(left.type).localeCompare(String(right.type)) || String(left.name).localeCompare(String(right.name)),
   );
   const enabled = nodes.filter((node) => node.enabled);
-  const healthy = enabled.filter((node) => node.healthy).length;
+  const healthy = enabled.filter((node) => nodeStatus(node).label === "Healthy").length;
   const transcodeJobs = nodes
     .filter((node) => String(node.type).toLowerCase() === "transcode")
     .reduce((total, node) => total + Math.max(0, Number(node.active_jobs) || 0), 0);
@@ -1025,7 +1043,7 @@ function showNodes(payload) {
 }
 
 async function fetchJSON(path) {
-  const response = await fetch(path, { cache: "no-store", headers: { Accept: "application/json" } });
+  const response = await fetch(path, { cache: "no-store", headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error(`${path} returned ${response.status}`);
   return response.json();
 }
@@ -1060,6 +1078,7 @@ async function loadResourceHistory() {
   state.memory = memory;
   state.network = network;
   const latestNetwork = network.findLast((sample) => sample.download !== null || sample.upload !== null);
+  state.freshness.network = latestNetwork?.t || null;
   if (latestNetwork) {
     setLiveNetworkReadout(
       formatBandwidth(latestNetwork.download),
@@ -1076,8 +1095,50 @@ function noteSuccess() {
 }
 
 function updateConnection() {
-  const statuses = [state.resourceOK, state.sessionsOK, state.nodesOK];
-  if (state.plexOK !== null) statuses.push(state.plexOK);
+  const now = Date.now();
+  const networkAge = now - (state.freshness.network || 0);
+  const networkStale = networkAge > 15_000 || networkAge < -5_000 || !navigator.onLine;
+  document.getElementById("network-freshness").hidden = !networkStale;
+  document.querySelector(".network-panel").classList.toggle("stale-data", networkStale);
+  const nodesByID = new Map(state.nodes.map(node => [String(node.id), node]));
+  for (const card of elements.nodes.children) {
+    const node = nodesByID.get(card.dataset.nodeId);
+    const indicator = node && card.querySelector(".node-status");
+    if (indicator) {
+      const status = nodeStatus(node);
+      indicator.textContent = status.label;
+      indicator.className = `node-status ${status.className}`;
+      card.classList.toggle("stale-data", status.label === "Unknown");
+    }
+  }
+  if (state.nodesOK && state.nodes.length) {
+    const enabled = state.nodes.filter(node => node.enabled);
+    elements.nodeSummary.textContent = `${enabled.filter(node => nodeStatus(node).label === "Healthy").length}/${enabled.length} healthy`;
+  }
+  const statuses = [];
+  for (const [source, label, ok, maxAge] of [
+    ["resources", "System", state.resourceOK, 15_000],
+    ["silo", "Silo", state.sessionsOK, 35_000],
+    ["plex", "Plex", state.plexOK, 35_000],
+    ["nodes", "Nodes", state.nodesOK, 35_000],
+  ]) {
+    const node = document.getElementById(`${source}-freshness`);
+    const enabled = source !== "plex" || ok !== null;
+    const stamp = state.freshness[source];
+    const age = stamp ? now - stamp : null;
+    const stale = ok === false || age === null || age > maxAge || age < -5_000 || !navigator.onLine;
+    node.hidden = !enabled || !stale;
+    node.textContent = stale ? `${label}: ${ok === false || !navigator.onLine ? "Unavailable" : age === null ? "Awaiting data" : "Stale data"}` : "";
+    node.classList.toggle("is-stale", stale);
+    if (enabled) statuses.push(!stale && ok === true);
+    if (source === "resources") document.querySelector(".resource-section").classList.toggle("stale-data", stale);
+    if (source === "nodes") elements.nodes.classList.toggle("stale-data", stale);
+    if (source === "silo" || source === "plex") {
+      for (const card of elements.sessions.children) {
+        if (card.dataset.source === source) card.classList.toggle("stale-data", stale);
+      }
+    }
+  }
   if (statuses.every((status) => status === true)) setConnection("live", "Live");
   else if (statuses.every((status) => status === false)) setConnection("offline", "Disconnected");
   else if (statuses.some((status) => status === false)) setConnection("degraded", "Partial");
@@ -1113,6 +1174,9 @@ async function refreshResources() {
     ]);
     const hostCPU = showProcesses(processes.status === "fulfilled" ? processes.value : null);
     if (resources.status === "rejected") throw resources.reason;
+    const sampledAt = Date.parse(resources.value?.sampled_at);
+    if (!resources.value?.available || !resources.value.system || !Number.isFinite(sampledAt)) throw new Error("Unavailable sample");
+    state.freshness.resources = sampledAt;
     showResourceSample(resources.value, hostCPU);
     if (history.status === "rejected") renderNetworkChart();
     state.resourceOK = true;
@@ -1131,13 +1195,17 @@ async function refreshResources() {
 async function refreshSessions() {
   if (state.sessionInFlight || document.visibilityState !== "visible") return;
   state.sessionInFlight = true;
+  PlaybackActivity.refresh();
   try {
     const [sessions, nodes, plex] = await Promise.allSettled([
       fetchJSON("/api/sessions").then(payload => {
         if (!Array.isArray(payload)) throw new Error("Invalid Silo sessions");
         return payload;
       }),
-      fetchJSON("/api/nodes"),
+      fetchJSON("/api/nodes").then(payload => {
+        if (!Array.isArray(payload)) throw new Error("Invalid nodes");
+        return payload;
+      }),
       fetchJSON("/api/plex/sessions").then(payload => {
         if (typeof payload?.enabled !== "boolean" || !Array.isArray(payload.sessions)) throw new Error("Invalid Plex sessions");
         return payload;
@@ -1146,6 +1214,9 @@ async function refreshSessions() {
     state.sessionsOK = sessions.status === "fulfilled";
     state.nodesOK = nodes.status === "fulfilled";
     state.plexOK = plex.status === "fulfilled" ? (plex.value.enabled ? true : null) : false;
+    if (state.sessionsOK) state.freshness.silo = Date.now();
+    if (state.nodesOK) state.freshness.nodes = Date.now();
+    if (state.plexOK === true) state.freshness.plex = Date.now();
     const messages = [];
     if (!state.sessionsOK) messages.push("Silo playback is unavailable.");
     if (state.plexOK === false) messages.push("Plex playback is unavailable. Check the server URL and token.");
@@ -1177,9 +1248,12 @@ function startPolling() {
   stopPolling();
   state.resourceTimer = window.setInterval(refreshResources, RESOURCE_POLL_INTERVAL_MS);
   state.sessionTimer = window.setInterval(refreshSessions, SESSION_POLL_INTERVAL_MS);
+  state.freshnessTimer = window.setInterval(updateConnection, 1_000);
 }
 
 function stopPolling() {
+  if (state.freshnessTimer !== null) window.clearInterval(state.freshnessTimer);
+  state.freshnessTimer = null;
   if (state.resourceTimer !== null) window.clearInterval(state.resourceTimer);
   if (state.sessionTimer !== null) window.clearInterval(state.sessionTimer);
   state.resourceTimer = null;
@@ -1188,6 +1262,7 @@ function stopPolling() {
 
 document.addEventListener("visibilitychange", async () => {
   if (document.visibilityState === "visible") {
+    updateConnection();
     for (const svg of chartViews.keys()) stopScrub(svg);
     await nextPaint();
     try {

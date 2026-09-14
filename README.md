@@ -2,7 +2,7 @@
 
 A low-overhead, mobile-first wallboard for Silo CPU, memory, network bandwidth, disk usage, playback-node health, and active Silo and Plex playback sessions. A small Go server keeps API credentials out of the browser and retains five minutes of CPU, memory, download, and upload samples in memory so charts survive page reloads.
 
-Includes per-device display preferences, Silo transcoder controls, playback termination, and optional Web Push alerts for sustained CPU usage, disk usage, playback, and transcoding.
+Includes recent playback activity, independent freshness indicators, free disk capacity, per-device display preferences, Silo transcoder controls, playback termination, and optional Web Push alerts for CPU, disk usage, playback, transcoding, and service outages/recovery.
 
 ## Compatible with
 
@@ -15,7 +15,7 @@ Logos identify compatible services; no affiliation or endorsement is implied. Se
 
 ## Screenshots
 
-Mobile views captured using live server data and a read-only settings preview. Settings screenshots predate the latest grouped headings and notification controls. No playback was terminated during capture.
+Mobile views captured using live server data and a read-only settings preview. Screenshots predate activity history, freshness/free-space indicators, and the latest grouped notification controls. No playback was terminated during capture.
 
 | System | Playing |
 | --- | --- |
@@ -36,13 +36,19 @@ Mobile views captured using live server data and a read-only settings preview. S
 3. Set `SILO_API_KEY` to an unscoped API key owned by an enabled Silo admin.
 4. On the Linux Docker host, run `ip route show default`. Set `HOST_NETWORK_INTERFACE` in `.env` to the interface shown after `dev`, such as `eth0` or `enp0s6`.
 5. To include Plex playback, set `PLEX_URL` to your Plex Media Server base URL (for example, `http://plex:32400`) and `PLEX_TOKEN` to its API token. Leave both blank for Silo-only playback.
-6. Start the service with host bandwidth and process monitoring:
+6. To enable notifications, set `PUSH_CONTACT` in `.env` to your real contact URI, such as `mailto:admin@example.com` or `https://example.com/contact`. Leave it blank to disable push. This identifies the sender to the push provider; it is not a notification recipient.
+7. Start the service with host bandwidth and process monitoring:
 
    ```sh
     docker compose -f compose.yaml -f compose.host-network.yaml -f compose.host-processes.yaml up -d
    ```
 
-Use this same command for updates and after changing `.env`. It recreates the service when needed with all monitoring settings applied.
+Use this same command after changing `.env`; a container restart alone does not apply environment changes. For image updates, pull the published image first, then recreate with the same files:
+
+```sh
+docker compose -f compose.yaml -f compose.host-network.yaml -f compose.host-processes.yaml pull
+docker compose -f compose.yaml -f compose.host-network.yaml -f compose.host-processes.yaml up -d
+```
 
 The default local URL is `http://127.0.0.1:8091`. The health endpoint is `/healthz`. Host metrics require a Linux Docker host; process CPU usage becomes available after two samples, approximately 10 seconds after startup.
 
@@ -50,7 +56,7 @@ The Silo admin resource and session routes are not covered by the currently avai
 
 ## Run with Portainer
 
-Create a stack using the following complete Compose definition. In Portainer's stack environment variables, set `SILO_URL`, `SILO_API_KEY`, and `HOST_NETWORK_INTERFACE` as described above. Set both `PLEX_URL` and `PLEX_TOKEN` to enable Plex, or leave both unset. `MONITOR_BIND` and `MONITOR_PORT` default to `127.0.0.1` and `8091`.
+Create a stack using the following complete Compose definition. In Portainer's stack environment variables, set `SILO_URL`, `SILO_API_KEY`, and `HOST_NETWORK_INTERFACE` as described above. Set both `PLEX_URL` and `PLEX_TOKEN` to enable Plex, or leave both unset. Set `PUSH_CONTACT` to your real `mailto:` address or HTTPS contact URL to enable push. `MONITOR_BIND` and `MONITOR_PORT` default to `127.0.0.1` and `8091`.
 
 ```yaml
 services:
@@ -65,6 +71,7 @@ services:
          PLEX_TOKEN: ${PLEX_TOKEN:-}
          PUSH_CONTACT: ${PUSH_CONTACT:-}
          PUSH_DATA_DIR: /data/push
+         ACTIVITY_DATA_DIR: /data/activity
          HOST_PROC_DIR: /host/proc
          HOST_NETWORK_STATS_DIR: /host/network
          LISTEN_ADDR: :8080
@@ -93,6 +100,21 @@ volumes:
 
 Deploy the stack. For subsequent configuration changes, edit this same stack and its environment variables, then use **Update the stack** to apply them. All host-monitoring settings are included in this definition; no additional Compose files are needed for Portainer.
 
+### Preserve existing data
+
+The named volume at `/data` stores both playback history (`activity/history.json`) and push keys, subscriptions, rules, and alert state (`push/notifications.json`). Keep this mount writable even though the container root filesystem is read-only. Do not use `docker compose down -v` or delete the volume during updates. Back it up securely: it contains private viewing history and push credentials.
+
+When moving or renaming an existing stack, reuse its actual volume name instead of creating an empty one. Find it with `docker volume ls`. For example, to retain an existing volume named `silo-performance_notification-data`, replace the top-level volume definition above with:
+
+```yaml
+volumes:
+   notification-data:
+      external: true
+      name: silo-performance_notification-data
+```
+
+Keep the service mount as `notification-data:/data`. The external volume must already exist; substitute your own existing name. For a new installation, use the original managed-volume definition. History remains enabled when `PUSH_CONTACT` is blank. Preserve `PUSH_CONTACT`, `PUSH_DATA_DIR`, and `ACTIVITY_DATA_DIR` when consolidating Compose overrides into a single stack.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -109,8 +131,9 @@ Deploy the stack. For subsequent configuration changes, edit this same stack and
 | `HOST_PROC_DIR` | unset | Read-only host `/proc` mount for the top CPU process list |
 | `PUSH_CONTACT` | unset | Enables Web Push when set to a real `mailto:` address or HTTPS contact URL |
 | `PUSH_DATA_DIR` | `/data/push` in Compose | Writable persistent directory for signing keys, subscriptions, rules, and alert state; required when push is enabled |
+| `ACTIVITY_DATA_DIR` | `/data/activity` in Docker/Compose; unset for standalone binaries | Writable persistent playback-history directory; independent of push configuration |
 
-The server samples resources every 5 seconds into a bounded in-memory history. The browser polls the current resource sample every 5 seconds and sessions every 15 seconds while visible. Resource responses are cached for 4 seconds and session responses for 10 seconds. Browser polling pauses when Mobile Safari backgrounds the tab; server history collection continues.
+The server samples resources every 5 seconds into bounded in-memory charts and Silo/configured Plex sessions every 10 seconds into playback history, persisted when `ACTIVITY_DATA_DIR` is set, even without notification subscriptions or an open browser. The browser polls resources every 5 seconds and sessions, nodes, and activity every 15 seconds while visible. Resource responses are cached for 4 seconds and session responses for 10 seconds. Browser polling pauses when Mobile Safari backgrounds the tab; server history collection continues.
 
 The image is published for AMD64 and ARM64 at `ghcr.io/jasjeetsuri/silo-monitor:latest`.
 
@@ -118,7 +141,11 @@ Both installation methods above mount the selected host interface's byte counter
 
 ## Push notifications
 
-**Settings > Notifications** groups controls under **CPU Alerts**, **Disk Alerts**, and **Playback Alerts**. Enable/Disable notifications and Send test remain at the top. Sliders show their current values and are disabled when their alert is off; titles and usernames are an opt-in setting under Playback Alerts.
+**Settings > Notifications** groups controls under **CPU Alerts**, **Disk Alerts**, **Playback Alerts**, and **Service Alerts**. Enable/Disable notifications and Send test remain at the top. Sliders show their current values and are disabled when their alert is off; titles and usernames are an opt-in setting under Playback Alerts.
+
+**Service Alerts > Service outages and recovery** is off by default. Silo and configured Plex session API failures (including authentication failures or invalid responses) trigger one alert after at least 60 seconds of consecutive failed checks. The first successful check after an alerted outage queues recovery confirmation. Enabled nodes are checked through Silo's node API every 10 seconds; only explicit unhealthy results with a health-check timestamp no older than 45 seconds count. Missing/stale checks or node API failures are unknown, not proof of individual node failures. Disabled/removed nodes are excluded without recovery notifications. Node names appear in service alerts.
+
+Outage notification state survives restarts, but sustained timers restart after downtime or monitoring gaps over 35 seconds. Turning the service rule off/on re-arms it. Silo and Plex checks run independently; an unavailable Silo API does not generate a cascade of node alerts. These are checks from Siloscope's network location, not an external uptime guarantee. Siloscope cannot notify while it is itself down, and losing outbound connectivity can prevent delivery.
 
 Disk alerts are opt-in under **Settings > Notifications > Disk Alerts > High disk usage**. The threshold slider defaults to 90% (range 75-100%) and applies to each disk shown by Silo. An alert is sent on the first fresh reading at or above the threshold, including when enabled while a disk is already full enough. Each disk alerts once until usage falls at least five percentage points below the threshold, then can alert again. This state survives restarts; changing the disk rule or threshold re-arms it. Missing, unavailable, or stale disk readings do not trigger or re-arm alerts. Disk checks reuse the existing background resource samples and work with the app closed, without extra polling.
 
@@ -126,13 +153,29 @@ Once notifications are enabled, preferences autosave on this device: toggles sav
 
 Push is optional and disabled until `PUSH_CONTACT` is set. Set it to your real contact address, for example `mailto:admin@your-domain.example`, and recreate the container with the updated Compose definition. A named volume at `/data` preserves the automatically generated VAPID signing keys and device subscriptions. With a bind mount instead, give UID 65532 write access to the directory. Do not expose this directory through the web server or commit its contents. Back it up securely; losing the keys requires devices to re-enable notifications.
 
+If **Send test** does not arrive, check the container logs. The UI's **Test notification queued** message confirms only local queueing; `push test notification accepted by service (HTTP 201)` confirms provider acceptance, not display on the device. HTTP 403 means the provider rejected the request: check the contact URI and use the latest image. Older versions incorrectly doubled the `mailto:` prefix for email contacts; updating fixes this without replacing keys or subscriptions. Keep exactly one `mailto:` prefix in `PUSH_CONTACT`. For an accepted message that does not appear, check notification permission, Focus modes, and the installed Home Screen app on iOS. Wait at least one minute between test requests. Do not delete the data volume to troubleshoot delivery.
+
 On iOS 16.4 or later, add the HTTPS site to the Home Screen, open that installed app, then choose **Settings > Notifications > Enable notifications** and grant permission. On supported desktop browsers, the same setting works over HTTPS (localhost also works for development). Use **Send test** to check delivery. Apple, Google/FCM, and Mozilla push endpoints are supported; outbound HTTPS access to those services is required. An authenticated reverse proxy is still required. Subscriptions must only be created by trusted administrators; same-origin checks are not authentication. Push can continue after a browser login expires until the device subscription is disabled or removed.
 
-Preferences are per device. CPU alerts default to 85% sustained for five minutes, a 30-minute repeat cooldown, and a recovery notification once CPU falls at least five percentage points below the threshold. CPU uses existing cached samples without another host scan. Missing or stale samples reset the sustained timer. Playback/transcode alerts are off by default. Enabling either starts a shared server-side session poll every ten seconds for Silo and configured Plex, using the same caches as browser requests. They continue with the app closed; no extra session polls run when no devices enable these events.
+Preferences are per device. CPU alerts default to 85% sustained for five minutes, a 30-minute repeat cooldown, and a recovery notification once CPU falls at least five percentage points below the threshold. CPU uses existing cached samples without another host scan. Missing or stale samples reset the sustained timer. Playback/transcode alerts are off by default and reuse the always-on history collector's ten-second polls and browser-request caches. They continue with the app closed, without additional session polls.
 
 The first successful session poll after startup, a long polling gap, or a preference change establishes a baseline without sending alerts for existing streams. Subsequent new sessions and transitions to transcoding notify once per observed transition. A new transcoding session can produce both notifications when both rules are enabled. Events of each type in one poll are grouped per source. Titles and usernames are hidden by default and can be enabled per device. CPU cooldown and subscription state survive restarts; the sustained CPU timer restarts because CPU activity during downtime is unknown.
 
-Delivery is best-effort: Focus modes, connectivity, browser restrictions, or push-service errors may delay or prevent alerts. Sessions shorter than the polling interval can be missed. A bounded in-memory queue and one delivery worker limit resource usage; queued notifications are not retried or replayed after a restart, and a full queue drops events. Expired subscriptions are removed after HTTP 404/410 responses. There is a limit of 32 devices, and test notifications are limited to one per device per minute. The service worker handles push/click events only and does not cache pages, credentials, or API responses. No new process scans are added; enabling playback alerts does add upstream HTTP polling while no browser is open.
+Delivery is best-effort: Focus modes, connectivity, browser restrictions, or push-service errors may delay or prevent alerts. Sessions shorter than the polling interval can be missed. A bounded in-memory queue and one delivery worker limit resource usage; queued notifications are not retried or replayed after a restart. A full queue drops playback events; sustained service conditions can queue again at a later check. Expired subscriptions are removed after HTTP 404/410 responses. There is a limit of 32 devices, and test notifications are limited to one per device per minute. The service worker handles push/click events only and does not cache pages, credentials, or API responses. No new process scans are added; service alerts add background node-API polling when enabled.
+
+## Activity and freshness
+
+The **history icon at the top right of Playing** opens a separate **History** screen. Its compact list shows poster artwork when available, the film or series title, episode details, and the user with a relative time. Select an item to expand its source, playback method, observed duration, and start/stop timestamps. The back arrow returns to Playing and restores its scroll position; the Playing tab stays selected while viewing history. Settings subpages use the same borderless back-arrow style. Tapping History navigation does not leave a focus outline; keyboard navigation retains visible focus indicators on controls.
+
+History retains up to 200 session records last seen within 30 days, across Silo and Plex, with 20 records shown at a time. Records are removed when older than 30 days or displaced by the 200-entry cap, whichever comes first. Playback method is the latest observed value (Direct play, Remux, Transcoding, or Unknown). Sessions already present at startup are labelled **First seen**, not assigned an invented start time. Active records are discarded after more than 35 seconds without an observation; failed requests never create stop or monitoring-gap entries. Completed records are unaffected by polling interruptions. Duration is elapsed observed time, including pauses, not watch time or media position. Short sessions between polls can be missed.
+
+Activity is saved after each ten-second collection cycle when `ACTIVITY_DATA_DIR` is set. Docker/Compose defaults the directory to `/data/activity`, with records in `/data/activity/history.json`; mount a persistent volume at `/data` to retain history across container replacements. Both Compose examples above provide this mount, and history storage works independently of push notifications. For a standalone binary, set `ACTIVITY_DATA_DIR` to a private writable directory; leaving it unset uses memory only and logs a warning.
+
+History files are replaced atomically with mode `0600` inside a directory created with mode `0700`. Startup rejects invalid or unwritable storage instead of silently clearing it. Retention is 30 days and 200 records. Startup removes legacy monitoring-gap entries and unfinished sessions from storage, retaining completed records; currently playing sessions get a fresh observed baseline. The latest unfinished collection cycle can be lost on an abrupt shutdown. Titles, usernames, and artwork references are retained on disk independently of the push-details preference. Protect the storage directory and `/api/activity` with the same care as the rest of the administrator dashboard. History already lost before persistence was enabled cannot be recovered.
+
+System, Silo, Plex, and Nodes show warnings only when data is stale, unavailable, or still loading; healthy data has no update label. System age uses Silo's actual sample timestamp; session/node-list ages measure the last successful response, which can include up to 10 seconds of server caching. Resource data older than 15 seconds, session/node responses older than 35 seconds, failed requests, and offline connectivity are flagged stale. Browser requests time out after 10 seconds. Node health checks older than 45 seconds are shown as Unknown rather than Healthy.
+
+Disk usage displays a usage bar with a large **free GiB** readout on the right, plus percentage and used/total capacity. Free space is derived from Silo's process-usable capacity minus used space, not nameplate capacity. Invalid metrics are omitted and per-disk stale readings are labelled. The current Silo resource API does not expose rclone cache size, so that optional metric is not displayed; Siloscope does not scan or modify the cache directory.
 
 ## Plex playback
 
@@ -140,7 +183,7 @@ To include Plex in the existing Playing screen, set both `PLEX_URL` and `PLEX_TO
 
 `PLEX_TOKEN` is your Plex API token, sent as the `X-Plex-Token` header. See [Plex's token instructions](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/) to obtain a server-owner token. Keep it in server-side configuration, never in the URL or browser settings.
 
-The monitor reads `/status/sessions` every 15 seconds while the page is visible, with a 10-second server cache. Plex movies, episodes, and music appear beside Silo streams, labeled by source, with users, clients, playback method, progress, and paused state. Posters are proxied through the monitor so the token stays on the backend. Plex does not provide a reliable session start time here, so its cards show playback state instead.
+The monitor reads `/status/sessions` every 10 seconds for activity history, with a shared 10-second server cache. The browser refreshes every 15 seconds while visible. Plex movies, episodes, and music appear beside Silo streams, labeled by source, with users, clients, playback method, progress, and paused state. Posters are proxied through the monitor so the token stays on the backend. Plex does not provide a reliable session start time here, so its cards show playback state instead.
 
 The Playing badge counts sessions from both sources. Plex sessions do not affect Silo node routing or job counts. If either playback source fails, the other remains visible with an outage notice; unavailable sessions are removed until the source recovers. Leave both variables blank to disable Plex. Protect the monitor behind your existing authenticated proxy because it exposes playback activity and posters.
 

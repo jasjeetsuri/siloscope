@@ -10,6 +10,7 @@ services:
       PLEX_TOKEN: ${PLEX_TOKEN:-}
       PUSH_CONTACT: ${PUSH_CONTACT:-}
       PUSH_DATA_DIR: /data/push
+      ACTIVITY_DATA_DIR: /data/activity
       LISTEN_ADDR: :8080
       GOMAXPROCS: "1"
       GOMEMLIMIT: 32MiB

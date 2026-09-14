@@ -89,6 +89,7 @@ type application struct {
 	client        *http.Client
 	cache         proxyCache
 	history       resourceHistory
+	activity      activityHistory
 	network       *hostNetworkSampler
 	processes     *processSampler
 	notifications *notificationService
@@ -101,6 +102,13 @@ func main() {
 	}
 
 	app := newApplication(cfg)
+	if directory := strings.TrimSpace(os.Getenv("ACTIVITY_DATA_DIR")); directory != "" {
+		if err := app.activity.open(directory); err != nil {
+			log.Fatal("playback history storage could not be initialized: ", err)
+		}
+	} else {
+		log.Print("ACTIVITY_DATA_DIR is unset; playback history will not survive restarts")
+	}
 	if contact := strings.TrimSpace(os.Getenv("PUSH_CONTACT")); contact != "" {
 		contactURL, err := url.Parse(contact)
 		if err != nil || (contactURL.Scheme != "mailto" && contactURL.Scheme != "https") || (contactURL.Scheme == "mailto" && !strings.Contains(contactURL.Opaque, "@")) || (contactURL.Scheme == "https" && contactURL.Host == "") {
@@ -127,6 +135,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go app.sampleResources(ctx)
+	go app.runActivity(ctx)
 	if app.notifications != nil {
 		go app.runNotifications(ctx)
 	}
@@ -218,6 +227,7 @@ func (a *application) routes() http.Handler {
 	})
 	mux.HandleFunc("GET /api/resources", a.proxyJSON("resources", "/api/v1/admin/system/resources", resourceCacheTTL))
 	mux.HandleFunc("GET /api/history", a.resourceHistoryJSON)
+	mux.HandleFunc("GET /api/activity", a.activityJSON)
 	mux.HandleFunc("GET /api/processes", a.processCPUJSON)
 	mux.HandleFunc("GET /api/notifications", a.notificationsJSON)
 	mux.HandleFunc("POST /api/notifications", a.notificationsJSON)
