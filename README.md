@@ -13,6 +13,26 @@ Includes recent playback activity, independent freshness indicators, free disk c
 
 Logos identify compatible services; no affiliation or endorsement is implied. See [logo sources](docs/images/LOGOS.md).
 
+### Silo API compatibility
+
+Siloscope requires Silo's native **v2 administrator API**. The integration was checked against upstream Silo server commit `032ca133a5f41b835a87a3e22076ca3c8f3381d6` and its `contracts/api/v2/openapi.json`. Older v1-only servers are not supported by this version; upgrade Silo before updating Siloscope. Set `SILO_URL` to the server base URL, not an `/api/v2` URL. Plex continues to use its own API unchanged.
+
+| Operation | Silo endpoint |
+| --- | --- |
+| Resources and charts | `GET /api/v2/admin/system/resources` |
+| Playback, history, and playback alerts | `GET /api/v2/admin/sessions` |
+| Nodes and node alerts | `GET /api/v2/admin/nodes` |
+| Stop Silo playback | `POST /api/v2/admin/sessions/{session_id}/terminate` |
+| Restart state | `GET /api/v2/admin/server/status` |
+| Request server restart | `POST /api/v2/admin/server/restart` |
+| Read transcoder configuration | `GET /api/v2/admin/settings/effective` |
+| Read restart requirements | `GET /api/v2/admin/settings/restart-keys` |
+| Save transcoder configuration | `PUT /api/v2/admin/settings` with `If-Match` |
+
+Use an unscoped API key owned by an enabled administrator. Session and node collections are fetched in pages of up to 200 and combined before updating the dashboard, history, or alerts. Failed pages are never interpreted as missing sessions or nodes. Collection reads are bounded by the upstream timeout, 100 pages, and 4 MiB total response size; exceeding a bound reports the source unavailable rather than presenting a partial snapshot. Siloscope's own browser-facing endpoints remain unchanged.
+
+Settings reads return a version (ETag), which each save sends back in `If-Match`. A concurrent change returns a conflict and requires **Reload settings**; Siloscope does not force an overwrite or replay the write. Playback termination requires a v2 receipt confirming durable revocation for the requested session before the UI reports the request accepted. Buffered media can still finish playing after revocation.
+
 ## Screenshots
 
 Mobile views captured using live server data and a read-only settings preview. Screenshots predate activity history, freshness/free-space indicators, and the latest grouped notification controls. No playback was terminated during capture.

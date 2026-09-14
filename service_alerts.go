@@ -96,7 +96,7 @@ func (app *application) pollNodeAlerts(ctx context.Context) {
 	if !enabled {
 		return
 	}
-	body, _, err := app.fetch(ctx, "nodes", "/api/v1/admin/nodes", app.config.cacheTTL)
+	body, _, err := app.fetch(ctx, "nodes", "/api/v2/admin/nodes", app.config.cacheTTL)
 	var nodes []struct {
 		ID      json.RawMessage `json:"id"`
 		Name    string          `json:"name"`

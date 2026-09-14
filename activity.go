@@ -42,7 +42,7 @@ func (app *application) pollActivity(ctx context.Context) {
 			var sessions []notificationSession
 			var available bool
 			if source == "Silo" {
-				body, _, err := app.fetch(ctx, "sessions", "/api/v1/admin/sessions", app.config.cacheTTL)
+				body, _, err := app.fetch(ctx, "sessions", "/api/v2/admin/sessions", app.config.cacheTTL)
 				available = err == nil && json.Unmarshal(body, &sessions) == nil && sessions != nil
 			} else {
 				body, err := app.plexSessionData(ctx)

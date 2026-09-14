@@ -33,6 +33,8 @@ window.TranscoderSettings = (() => {
       const response = await fetch("/api/transcoder", { cache: "no-store", signal: AbortSignal.timeout(15000) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to load transcoder settings");
+      let etag = response.headers.get("ETag");
+      if (!etag && !data.preview) throw new Error("Silo settings version is unavailable. Reload settings before editing.");
       if (!Array.isArray(data.fields) || !data.values || !Array.isArray(data.restart_keys)) throw new Error("Invalid transcoder settings response");
       if (current !== generation) return;
       const original = { ...data.values };
@@ -119,13 +121,16 @@ window.TranscoderSettings = (() => {
         let rejected = false;
         try {
           const response = await fetch("/api/transcoder", {
-            method: "PUT", headers: { "Content-Type": "application/json", "X-Siloscope-Settings": "1" },
+            method: "PUT", headers: { "Content-Type": "application/json", "X-Siloscope-Settings": "1", ...(etag ? { "If-Match": etag } : {}) },
             body: JSON.stringify({ values }), signal: AbortSignal.timeout(15000),
           });
           rejected = response.status === 400;
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || "Settings save could not be confirmed. Reload before retrying.");
+          const nextETag = response.headers.get("ETag");
+          if (!nextETag && !data.preview) throw new Error("Settings save could not be confirmed. Reload before retrying.");
           if (!result.values || Object.keys(values).some(key => typeof result.values[key] !== "string")) throw new Error("Settings save could not be confirmed. Reload before retrying.");
+          etag = nextETag;
           Object.assign(original, result.values);
           if (result.restart_required) window.dispatchEvent(new CustomEvent("monitor-restart-required", { detail: { preview: data.preview === true } }));
           restore();

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Silo Monitor grey and pink telemetry concept</title>
+  <rect width="1024" height="1024" rx="212" fill="#140f11"/>
+  <defs>
+    <linearGradient id="grey" x1="0" y1="0" x2="0.8" y2="1">
+      <stop stop-color="#a2a0a3"/>
+      <stop offset="1" stop-color="#636166"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#grey)" stroke="#b5b1b8" stroke-opacity=".22" stroke-width="3" stroke-linejoin="round">
+    <path d="M396 118 Q378 108 378 132 L378 312 Q378 337 399 325 L602 210 Q625 197 601 183 Z"/>
+    <path fill-rule="evenodd" d="M396 361 L599 244 Q626 229 626 259 L626 342 Q626 360 610 370 L404 489 Q378 505 378 474 L378 393 Q378 372 396 361 Z M465 380 L465 417 L543 372 L543 335 Z"/>
+    <path fill-rule="evenodd" d="M396 559 L599 442 Q626 427 626 457 L626 540 Q626 558 610 568 L404 687 Q378 703 378 672 L378 591 Q378 570 396 559 Z M465 578 L465 615 L543 570 L543 533 Z"/>
+    <path fill-rule="evenodd" d="M396 757 L599 640 Q626 625 626 655 L626 738 Q626 756 610 766 L404 885 Q378 901 378 870 L378 789 Q378 768 396 757 Z M465 776 L465 813 L543 768 L543 731 Z"/>
+  </g>
+  <path d="M124 578 H254 L320 639 L356 529 L644 363 L699 432 L750 397 H900" fill="none" stroke="#140f11" stroke-width="43" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M124 578 H254 L320 639 L356 529 L644 363 L699 432 L750 397 H900" fill="none" stroke="#ee8b9d" stroke-width="19" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

@@ -934,7 +934,7 @@ function formatMbps(kbps) {
 
 function nodeRouteCount(node) {
   const key = node.type === "proxy" ? "routing_egress_node_id" : "routing_execution_node_id";
-  return state.sessions.filter((session) => session.source !== "plex" && Number(session[key]) === Number(node.id)).length;
+  return state.sessions.filter((session) => session.source !== "plex" && session[key] != null && String(session[key]) === String(node.id)).length;
 }
 
 function nodeResourceSummary(node) {

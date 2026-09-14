@@ -225,16 +225,16 @@ func (a *application) routes() http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "ok\n")
 	})
-	mux.HandleFunc("GET /api/resources", a.proxyJSON("resources", "/api/v1/admin/system/resources", resourceCacheTTL))
+	mux.HandleFunc("GET /api/resources", a.proxyJSON("resources", "/api/v2/admin/system/resources", resourceCacheTTL))
 	mux.HandleFunc("GET /api/history", a.resourceHistoryJSON)
 	mux.HandleFunc("GET /api/activity", a.activityJSON)
 	mux.HandleFunc("GET /api/processes", a.processCPUJSON)
 	mux.HandleFunc("GET /api/notifications", a.notificationsJSON)
 	mux.HandleFunc("POST /api/notifications", a.notificationsJSON)
-	mux.HandleFunc("GET /api/sessions", a.proxyJSON("sessions", "/api/v1/admin/sessions", a.config.cacheTTL))
+	mux.HandleFunc("GET /api/sessions", a.proxyJSON("sessions", "/api/v2/admin/sessions", a.config.cacheTTL))
 	mux.HandleFunc("GET /api/plex/sessions", a.plexSessionsJSON)
 	mux.HandleFunc("GET /api/plex/poster", a.plexPoster)
-	mux.HandleFunc("GET /api/nodes", a.proxyJSON("nodes", "/api/v1/admin/nodes", a.config.cacheTTL))
+	mux.HandleFunc("GET /api/nodes", a.proxyJSON("nodes", "/api/v2/admin/nodes", a.config.cacheTTL))
 	mux.HandleFunc("GET /api/transcoder", a.transcoderSettings)
 	mux.HandleFunc("PUT /api/transcoder", a.transcoderSettings)
 	mux.HandleFunc("GET /api/restart-status", a.restartStatus)
@@ -266,7 +266,7 @@ func (a *application) sampleResources(ctx context.Context) {
 
 func (a *application) captureResourceSample(ctx context.Context) {
 	a.processes.sample(time.Now())
-	body, _, err := a.fetch(ctx, "resources", "/api/v1/admin/system/resources", resourceCacheTTL)
+	body, _, err := a.fetch(ctx, "resources", "/api/v2/admin/system/resources", resourceCacheTTL)
 	if err != nil {
 		log.Printf("resource history: %v", err)
 		return
@@ -462,6 +462,80 @@ func (a *application) fetch(ctx context.Context, cacheKey, upstreamPath string, 
 
 	upstreamURL := *a.config.siloURL
 	upstreamURL.Path = strings.TrimRight(upstreamURL.Path, "/") + upstreamPath
+	var body []byte
+	var contentType string
+	var err error
+	if upstreamPath == "/api/v2/admin/sessions" || upstreamPath == "/api/v2/admin/nodes" {
+		body, err = a.fetchCollection(ctx, upstreamURL)
+		contentType = "application/json"
+	} else {
+		body, contentType, err = a.fetchResponse(ctx, upstreamURL)
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	a.cache.mu.Lock()
+	a.cache.entries[cacheKey] = cacheEntry{
+		body:        append([]byte(nil), body...),
+		contentType: contentType,
+		expiresAt:   time.Now().Add(cacheTTL),
+	}
+	a.cache.mu.Unlock()
+	return body, contentType, nil
+}
+
+func (a *application) fetchCollection(ctx context.Context, upstreamURL url.URL) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, a.config.timeout)
+	defer cancel()
+	items := make([]json.RawMessage, 0)
+	seen := make(map[string]bool)
+	query := upstreamURL.Query()
+	query.Set("limit", "200")
+	totalBytes := 0
+	for pageNumber := 0; pageNumber < 100; pageNumber++ {
+		upstreamURL.RawQuery = query.Encode()
+		body, _, err := a.fetchResponse(ctx, upstreamURL)
+		if err != nil {
+			return nil, err
+		}
+		totalBytes += len(body)
+		if totalBytes > maxResponseBytes {
+			return nil, errors.New("Silo collection exceeded 4 MiB")
+		}
+		var collection struct {
+			Items []json.RawMessage `json:"items"`
+			Page  *struct {
+				HasMore    *bool  `json:"has_more"`
+				NextCursor string `json:"next_cursor"`
+			} `json:"page"`
+		}
+		if json.Unmarshal(body, &collection) != nil || collection.Items == nil {
+			return nil, errors.New("Silo returned an invalid collection")
+		}
+		for _, item := range collection.Items {
+			var record map[string]json.RawMessage
+			if json.Unmarshal(item, &record) != nil || record == nil {
+				return nil, errors.New("Silo returned an invalid collection item")
+			}
+		}
+		if collection.Page != nil && collection.Page.HasMore == nil {
+			return nil, errors.New("Silo returned invalid collection pagination")
+		}
+		items = append(items, collection.Items...)
+		if collection.Page == nil || !*collection.Page.HasMore {
+			return json.Marshal(items)
+		}
+		cursor := collection.Page.NextCursor
+		if cursor == "" || len(cursor) > 8192 || seen[cursor] {
+			return nil, errors.New("Silo returned an invalid collection cursor")
+		}
+		seen[cursor] = true
+		query.Set("cursor", cursor)
+	}
+	return nil, errors.New("Silo collection exceeded the page limit")
+}
+
+func (a *application) fetchResponse(ctx context.Context, upstreamURL url.URL) ([]byte, string, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL.String(), nil)
 	if err != nil {
 		return nil, "", err
@@ -494,13 +568,6 @@ func (a *application) fetch(ctx context.Context, cacheKey, upstreamPath string, 
 	if contentType == "" {
 		contentType = "application/json"
 	}
-	a.cache.mu.Lock()
-	a.cache.entries[cacheKey] = cacheEntry{
-		body:        append([]byte(nil), body...),
-		contentType: contentType,
-		expiresAt:   time.Now().Add(cacheTTL),
-	}
-	a.cache.mu.Unlock()
 	return body, contentType, nil
 }
 

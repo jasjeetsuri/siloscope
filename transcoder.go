@@ -33,7 +33,18 @@ func (app *application) terminatePlayback(writer http.ResponseWriter, request *h
 	var status int
 	var err error
 	if input.Source == "silo" {
-		_, status, err = app.transcoderRequest(request, http.MethodPost, "/api/v1/admin/sessions/"+input.ID+"/terminate", []byte(`{"reason":"Stopped by administrator"}`))
+		var body []byte
+		body, status, err = app.transcoderRequest(request, http.MethodPost, "/api/v2/admin/sessions/"+input.ID+"/terminate", []byte(`{"reason":"Stopped by administrator"}`))
+		if err == nil && status >= 200 && status < 300 {
+			var receipt struct {
+				SessionID        string `json:"session_id"`
+				AuthorityRevoked bool   `json:"authority_revoked"`
+				DurableState     string `json:"durable_state"`
+			}
+			if status != http.StatusOK || json.Unmarshal(body, &receipt) != nil || receipt.SessionID != input.ID || !receipt.AuthorityRevoked || receipt.DurableState != "stopped" {
+				err = errors.New("invalid Silo termination receipt")
+			}
+		}
 	} else {
 		if app.config.plexURL == nil {
 			writeJSONError(writer, http.StatusServiceUnavailable, "Plex is not configured")
@@ -80,7 +91,7 @@ func (app *application) terminatePlayback(writer http.ResponseWriter, request *h
 func (app *application) restartStatus(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.Header().Set("Content-Type", "application/json")
-	body, status, err := app.transcoderRequest(request, http.MethodGet, "/api/v1/admin/server/status", nil)
+	body, status, err := app.transcoderRequest(request, http.MethodGet, "/api/v2/admin/server/status", nil)
 	if err != nil || status != http.StatusOK {
 		writeJSONError(writer, http.StatusBadGateway, "Silo restart status is unavailable")
 		return
@@ -110,7 +121,7 @@ func (app *application) restartServer(writer http.ResponseWriter, request *http.
 		writeJSONError(writer, http.StatusForbidden, "Same-origin settings request required")
 		return
 	}
-	body, status, err := app.transcoderRequest(request, http.MethodPost, "/api/v1/admin/server/restart", []byte(`{}`))
+	body, status, err := app.transcoderRequest(request, http.MethodPost, "/api/v2/admin/server/restart", []byte(`{}`))
 	if status == http.StatusServiceUnavailable || status == http.StatusForbidden {
 		writeJSONError(writer, status, "Silo restart is unavailable or not permitted")
 		return
@@ -175,14 +186,22 @@ func validTranscoderValue(field transcoderField, value string) bool {
 }
 
 func (app *application) transcoderRequest(request *http.Request, method, endpoint string, body []byte) ([]byte, int, error) {
+	result, status, _, err := app.transcoderResponse(request, method, endpoint, body)
+	return result, status, err
+}
+
+func (app *application) transcoderResponse(request *http.Request, method, endpoint string, body []byte) ([]byte, int, http.Header, error) {
 	upstream := *app.config.siloURL
 	upstream.Path = strings.TrimRight(upstream.Path, "/") + endpoint
 	upstreamRequest, err := http.NewRequestWithContext(request.Context(), method, upstream.String(), bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	upstreamRequest.Header.Set("Authorization", "Bearer "+app.config.apiKey)
 	upstreamRequest.Header.Set("Accept", "application/json")
+	if method == http.MethodPut {
+		upstreamRequest.Header.Set("If-Match", request.Header.Get("If-Match"))
+	}
 	if method == http.MethodPut || method == http.MethodPost {
 		upstreamRequest.Header.Set("Content-Type", "application/json")
 	}
@@ -190,14 +209,14 @@ func (app *application) transcoderRequest(request *http.Request, method, endpoin
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	response, err := client.Do(upstreamRequest)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	defer response.Body.Close()
 	result, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil || len(result) > maxResponseBytes || !json.Valid(result) {
-		return nil, response.StatusCode, errors.New("invalid settings response")
+		return nil, response.StatusCode, response.Header, errors.New("invalid settings response")
 	}
-	return result, response.StatusCode, nil
+	return result, response.StatusCode, response.Header, nil
 }
 
 func (app *application) transcoderSettings(writer http.ResponseWriter, request *http.Request) {
@@ -234,13 +253,22 @@ func (app *application) transcoderSettings(writer http.ResponseWriter, request *
 				return
 			}
 		}
+		etag := request.Header.Get("If-Match")
+		if len(etag) < 2 || len(etag) > 1024 || etag[0] != '"' || etag[len(etag)-1] != '"' || strings.ContainsAny(etag[1:len(etag)-1], "\"\r\n") {
+			writeJSONError(writer, http.StatusPreconditionRequired, "Reload settings before saving; a current settings version is required.")
+			return
+		}
 		payload, _ := json.Marshal(update)
-		body, status, err := app.transcoderRequest(request, http.MethodPut, "/api/v1/admin/settings", payload)
+		body, status, headers, err := app.transcoderResponse(request, http.MethodPut, "/api/v2/admin/settings", payload)
+		if status == http.StatusPreconditionFailed || status == http.StatusPreconditionRequired {
+			writeJSONError(writer, status, "Silo settings changed. Reload settings before saving again.")
+			return
+		}
 		if status == http.StatusBadRequest || status == http.StatusConflict || status == http.StatusUnprocessableEntity {
 			writeJSONError(writer, http.StatusBadRequest, "Silo rejected these settings. Check values and routing compatibility.")
 			return
 		}
-		if err != nil || status != http.StatusOK {
+		if err != nil || status != http.StatusOK || headers.Get("ETag") == "" {
 			writeJSONError(writer, http.StatusBadGateway, "Settings save could not be confirmed. Reload before retrying.")
 			return
 		}
@@ -265,11 +293,12 @@ func (app *application) transcoderSettings(writer http.ResponseWriter, request *
 			}
 		}
 		result.RestartKeys = keys
+		writer.Header().Set("ETag", headers.Get("ETag"))
 		_ = json.NewEncoder(writer).Encode(result)
 		return
 	}
-	body, status, err := app.transcoderRequest(request, http.MethodGet, "/api/v1/admin/settings/effective", nil)
-	if err != nil || status != http.StatusOK {
+	body, status, headers, err := app.transcoderResponse(request, http.MethodGet, "/api/v2/admin/settings/effective", nil)
+	if err != nil || status != http.StatusOK || headers.Get("ETag") == "" {
 		writeJSONError(writer, http.StatusBadGateway, "Silo transcoder settings are unavailable")
 		return
 	}
@@ -283,7 +312,7 @@ func (app *application) transcoderSettings(writer http.ResponseWriter, request *
 			delete(values, key)
 		}
 	}
-	body, status, err = app.transcoderRequest(request, http.MethodGet, "/api/v1/admin/settings/restart-keys", nil)
+	body, status, err = app.transcoderRequest(request, http.MethodGet, "/api/v2/admin/settings/restart-keys", nil)
 	if err != nil || status != http.StatusOK {
 		writeJSONError(writer, http.StatusBadGateway, "Silo restart requirements are unavailable")
 		return
@@ -313,6 +342,7 @@ func (app *application) transcoderSettings(writer http.ResponseWriter, request *
 			restartKeys = append(restartKeys, field.Key)
 		}
 	}
+	writer.Header().Set("ETag", headers.Get("ETag"))
 	_ = json.NewEncoder(writer).Encode(struct {
 		Fields      []transcoderField `json:"fields"`
 		Values      map[string]string `json:"values"`
